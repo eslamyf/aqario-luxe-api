@@ -29,7 +29,7 @@ exports.createPayment = async (req, res, next) => {
     }
 
     // FIX — Use PAYMENT_STATUS.PAID constant instead of hardcoded 'paid'
-    const existingPayment = await Payment.findOne({ booking_id: bookingId, status: PAYMENT_STATUS.PAID }).session(session);
+    const existingPayment = await Payment.findOne({ booking: bookingId, status: PAYMENT_STATUS.PAID }).session(session);
     if (existingPayment) {
       await session.abortTransaction();
       return res.status(409).json({ status: 'fail', message: req.t('PAYMENT.ALREADY_VERIFIED') });
@@ -37,10 +37,12 @@ exports.createPayment = async (req, res, next) => {
 
     const payment = await Payment.create(
       [{
-        user_id:       req.user._id,
-        booking_id:    bookingId,
-        amount:        amount || booking.amount,
-        method:        method || 'cash',
+        user:          req.user._id,
+        property:      booking.property_id,
+        booking:       bookingId,
+        propertyPrice: booking.amount,
+        totalAmount:   amount || booking.amount,
+        paymentMethod: method || 'cash',
         transactionId: uuidv4(),
         status:        'pending',
       }],
@@ -72,7 +74,7 @@ exports.updatePaymentStatus = async (req, res, next) => {
       return res.status(404).json({ status: 'fail', message: req.t('PAYMENT.NOT_FOUND') });
     }
 
-    if (payment.user_id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (payment.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ status: 'fail', message: req.t('COMMON.NOT_AUTHORIZED') });
     }
 
@@ -95,7 +97,7 @@ exports.deletePayment = async (req, res, next) => {
     if (payment.status === 'paid') {
       return res.status(400).json({ status: 'fail', message: req.t('PAYMENT.ONLY_REFUND_COMPLETED') });
     }
-    if (payment.user_id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (payment.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ status: 'fail', message: req.t('COMMON.NOT_AUTHORIZED') });
     }
     await payment.deleteOne();
@@ -111,9 +113,9 @@ exports.getUserPayments = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip  = (page - 1) * limit;
 
-    const total    = await Payment.countDocuments({ user_id: req.user._id });
-    const payments = await Payment.find({ user_id: req.user._id })
-      .populate('booking_id', 'start_date end_date amount property_id')
+    const total    = await Payment.countDocuments({ user: req.user._id });
+    const payments = await Payment.find({ user: req.user._id })
+      .populate('booking', 'start_date end_date amount property_id')
       .sort('-createdAt').skip(skip).limit(limit);
 
     res.status(200).json({ status: 'success', results: payments.length, total, page, pages: Math.ceil(total / limit), data: { payments } });
@@ -130,8 +132,8 @@ exports.getAllPayments = async (req, res, next) => {
 
     const total    = await Payment.countDocuments();
     const payments = await Payment.find()
-      .populate('user_id',    'name email')
-      .populate('booking_id', 'start_date end_date amount property_id')
+      .populate('user',    'name email')
+      .populate('booking', 'start_date end_date amount property_id')
       .sort('-createdAt').skip(skip).limit(limit);
 
     res.status(200).json({ status: 'success', results: payments.length, total, page, pages: Math.ceil(total / limit), data: { payments } });

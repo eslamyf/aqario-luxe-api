@@ -1,3 +1,4 @@
+const mongoose  = require('mongoose');
 const User      = require('../../models/user.model');
 const Property  = require('../../models/property.model');
 const Booking   = require('../../models/booking.model');
@@ -256,6 +257,37 @@ exports.ownerBookings = async (req, res, next) => {
 // ══════════════════════════════════════════════════════
 //  BUYER DASHBOARD
 // ══════════════════════════════════════════════════════
+
+exports.buyerStats = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+
+    // Parallel Execution for low latency
+    const [totalBookings, activeBookings, savedProperties, spentResult] = await Promise.all([
+      Booking.countDocuments({ user_id: userId }),
+      Booking.countDocuments({ user_id: userId, status: { $in: ['approved', 'pending'] } }),
+      Favorite.countDocuments({ user_id: userId }),
+      Payment.aggregate([
+        { $match: { user: new mongoose.Types.ObjectId(userId), status: PAYMENT_STATUS.PAID } },
+        { $group: { _id: null, totalSpent: { $sum: '$totalAmount' } } }
+      ])
+    ]);
+
+    const totalSpent = spentResult[0]?.totalSpent || 0;
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        totalBookings,
+        activeBookings,
+        savedProperties,
+        totalSpent
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
 exports.buyerBookings = async (req, res, next) => {
   try {

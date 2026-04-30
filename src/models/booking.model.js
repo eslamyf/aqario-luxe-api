@@ -62,6 +62,7 @@ const bookingSchema = new mongoose.Schema(
 
 bookingSchema.index({ property_id: 1, start_date: 1, end_date: 1 });
 bookingSchema.index({ user_id: 1 });
+bookingSchema.index({ user_id: 1, status: 1 }); // Index for dashboard aggregations
 bookingSchema.index({ user_id: 1, created_at: -1 });
 bookingSchema.index({ property_id: 1, status: 1 });
 

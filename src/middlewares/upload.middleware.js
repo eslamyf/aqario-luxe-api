@@ -84,7 +84,25 @@ const uploadImagesToCloud = async (req, _res, next) => {
   }
 };
 
+const uploadKYCImageToCloud = async (req, _res, next) => {
+  try {
+    if (!req.file) {
+      throw new AppError('No image file provided', 400);
+    }
+    
+    if (!isAllowedImageBuffer(req.file.buffer)) {
+      throw new AppError(`File type not allowed - Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`, 400);
+    }
+
+    req.body.imageUrl = await uploadToCloudinary(req.file.buffer, 'real-estate/kyc');
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   uploadPropertyImages: [handleMulterError(upload.array('images', 10)), uploadImagesToCloud],
   uploadSingleImage: [handleMulterError(upload.single('photo')), uploadImagesToCloud],
+  uploadKYCImage: [handleMulterError(upload.single('image')), uploadKYCImageToCloud],
 };

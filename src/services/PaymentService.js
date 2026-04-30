@@ -195,13 +195,13 @@ class PaymentService {
       // SUCCESS: Update payment and booking atomically
       // ─────────────────────────────────────────────────────────────
       payment.isVerified = true; // ← IDEMPOTENCY FLAG (prevents re-processing)
-      payment.status = 'completed';
+      payment.status = 'paid';
       payment.transactionId = verified.transactionId;
       payment.verifiedAt = new Date();
       payment.metadata = { ...payment.metadata, ...verified.metadata };
       await payment.save({ session });
 
-      logger.info(`[Payment] Payment verified and marked COMPLETED: ${paymentId}`);
+      logger.info(`[Payment] Payment verified and marked PAID: ${paymentId}`);
 
       // Update booking status
       const booking = await Booking.findByIdAndUpdate(
@@ -321,8 +321,8 @@ class PaymentService {
         throw new AppError('Payment not found', 404);
       }
 
-      if (payment.status !== 'completed') {
-        throw new Error('Can only refund completed payments');
+      if (payment.status !== 'paid') {
+        throw new Error('Can only refund paid payments');
       }
 
       // Get provider

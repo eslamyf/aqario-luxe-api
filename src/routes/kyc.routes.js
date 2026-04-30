@@ -4,6 +4,7 @@ const kycController = require('../controllers/kyc/kyc.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
 const validate = require('../middlewares/validation.middleware');
+const { uploadKYCImage } = require('../middlewares/upload.middleware');
 
 // Apply authentication to all routes
 router.use(protect);
@@ -35,6 +36,31 @@ router.use(protect);
  *         description: Unauthorized
  */
 router.post('/', kycController.uploadKYCDocuments);
+
+/**
+ * @swagger
+ * /kyc/upload:
+ *   post:
+ *     tags: [🆔 KYC]
+ *     summary: Upload a single KYC image to Cloudinary
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Image uploaded successfully
+ *       400:
+ *         description: Invalid image file
+ */
+router.post('/upload', uploadKYCImage, kycController.uploadKYCImageSingle);
 
 /**
  * @swagger

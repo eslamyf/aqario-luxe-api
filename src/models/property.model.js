@@ -90,10 +90,14 @@ propertySchema.index({ status: 1 });
 propertySchema.index({ isApproved: 1, status: 1 });
 propertySchema.index({ owner: 1, createdAt: -1 });
 
-// FIX — إضافة Text Index للبحث الكفء بدل $regex البطيء
+// Compound indexes for optimized filtering
+propertySchema.index({ 'location.city': 1, 'location.district': 1 });
+propertySchema.index({ price: 1, type: 1, listingType: 1 });
+
+// Text Index for full-text search engine
 propertySchema.index(
   { title: 'text', description: 'text', 'location.city': 'text', 'location.district': 'text' },
-  { weights: { title: 10, 'location.city': 5, 'location.district': 5, description: 1 } }
+  { weights: { title: 10, description: 5, 'location.city': 5, 'location.district': 1 } }
 );
 
 // Virtual populate for reviews

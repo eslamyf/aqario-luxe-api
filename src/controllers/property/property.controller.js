@@ -40,7 +40,9 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
 
   // city → location.city (nested field in schema)
   if (rawQuery.city) {
-    rawQuery['location.city'] = new RegExp(rawQuery.city, 'i');
+    // Prevent Regex injection (ReDoS)
+    const escapedCity = rawQuery.city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    rawQuery['location.city'] = new RegExp(escapedCity, 'i');
     delete rawQuery.city;
   }
 
@@ -58,10 +60,28 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
     .limitFields()
     .paginate();
 
+  // If using cursor, we don't strictly need total pages, but we keep it for backward compatibility
   const [properties, total] = await Promise.all([
     features.query.populate('owner', 'name email phone photo').lean(),
     Property.countDocuments({ ...features.filterQuery, isApproved: true }),
   ]);
+
+  // Inject isFavorited using O(1) lookup to prevent N+1 queries
+  if (req.user) {
+    const favorites = await Favorite.find({ user_id: req.user._id }).select('property_id').lean();
+    const favSet = new Set(favorites.map(f => f.property_id.toString()));
+    
+    properties.forEach(p => {
+      p.isFavorited = favSet.has(p._id.toString());
+    });
+  }
+
+  // Generate next cursor if properties exist
+  let nextCursor = null;
+  if (properties.length > 0) {
+    const lastDoc = properties[properties.length - 1];
+    nextCursor = `${new Date(lastDoc.createdAt).toISOString()}_${lastDoc._id}`;
+  }
 
   res.status(200).json({
     status:  'success',
@@ -69,6 +89,7 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
     total,
     page:    req.query.page  * 1 || 1,
     pages:   Math.ceil(total / (req.query.limit * 1 || 10)),
+    nextCursor, // Return cursor for frontend
     data:    { properties },
   });
 });

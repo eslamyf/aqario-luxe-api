@@ -335,6 +335,20 @@ router.get('/owner/bookings', restrictTo('owner','agent','admin'), paginate(Book
 
 /**
  * @swagger
+ * /dashboard/buyer/stats:
+ *   get:
+ *     tags: [📊 Dashboard]
+ *     summary: Get my buyer dashboard statistics
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Buyer stats
+ *       401: { $ref: '#/components/responses/401' }
+ */
+router.get('/buyer/stats', dashboardController.buyerStats);
+
+/**
+ * @swagger
  * /dashboard/buyer/bookings:
  *   get:
  *     tags: [📊 Dashboard]

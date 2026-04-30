@@ -72,6 +72,27 @@ exports.uploadKYCDocuments = async (req, res, next) => {
 };
 
 /**
+ * POST /api/v1/kyc/upload
+ * Upload a single KYC image to Cloudinary and return the URL
+ */
+exports.uploadKYCImageSingle = async (req, res, next) => {
+  try {
+    if (!req.body.imageUrl) {
+      return res.status(400).json({ status: 'fail', message: 'Image upload failed' });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        url: req.body.imageUrl,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * GET /api/v1/kyc/status
  * Check current KYC verification status
  */
@@ -231,16 +252,27 @@ exports.approveKYC = async (req, res, next) => {
       });
     }
 
-    // Update KYC status
-    user.kycStatus = 'approved';
-    user.kycVerifiedAt = new Date();
-    user.kycApprovedBy = req.user._id; // Admin ID
-    user.kycApprovedAt = new Date();
-    user.kycRejectionReason = null;
-    await user.save({ validateBeforeSave: false });
+    // Atomic Update to prevent race conditions
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: req.params.userId, kycStatus: 'pending' },
+      {
+        $set: {
+          kycStatus: 'approved',
+          kycVerifiedAt: new Date(),
+          kycApprovedBy: req.user._id,
+          kycApprovedAt: new Date(),
+          kycRejectionReason: null
+        }
+      },
+      { new: true, runValidators: false }
+    );
+
+    if (!updatedUser) {
+       return res.status(400).json({ status: 'fail', message: 'KYC status is no longer pending or user not found' });
+    }
 
     logger.info(
-      `[KYC] Admin ${req.user._id} (${req.user.name}) APPROVED KYC for user ${user._id} (${user.name})`
+      `[KYC] Admin ${req.user._id} (${req.user.name}) APPROVED KYC for user ${updatedUser._id} (${updatedUser.name})`
     );
 
     res.status(200).json({
@@ -297,14 +329,25 @@ exports.rejectKYC = async (req, res, next) => {
       });
     }
 
-    // Update KYC status
-    user.kycStatus = 'rejected';
-    user.kycRejectionReason = reason;
-    user.kycAttempts = (user.kycAttempts || 0) + 1;
-    await user.save({ validateBeforeSave: false });
+    // Atomic Update to prevent race conditions
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: req.params.userId, kycStatus: 'pending' },
+      {
+        $set: {
+          kycStatus: 'rejected',
+          kycRejectionReason: reason
+        },
+        $inc: { kycAttempts: 1 }
+      },
+      { new: true, runValidators: false }
+    );
+
+    if (!updatedUser) {
+      return res.status(400).json({ status: 'fail', message: 'KYC status is no longer pending or user not found' });
+    }
 
     logger.info(
-      `[KYC] Admin ${req.user._id} (${req.user.name}) REJECTED KYC for user ${user._id} (${user.name}): "${reason}"`
+      `[KYC] Admin ${req.user._id} (${req.user.name}) REJECTED KYC for user ${updatedUser._id} (${updatedUser.name}): "${reason}"`
     );
 
     res.status(200).json({

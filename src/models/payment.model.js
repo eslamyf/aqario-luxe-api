@@ -68,7 +68,7 @@ const paymentSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ['pending', 'completed', 'failed', 'refunded', 'expired'],
+        values: ['pending', 'paid', 'failed', 'refunded', 'expired'],
         message: 'Invalid payment status',
       },
       default: 'pending',
@@ -134,6 +134,7 @@ paymentSchema.index(
 );
 
 // Queries
+paymentSchema.index({ user: 1, status: 1 }); // Index for dashboard aggregations
 paymentSchema.index({ user: 1, createdAt: -1 });
 paymentSchema.index({ property: 1, createdAt: -1 });
 paymentSchema.index({ transactionId: 1 }, { sparse: true });

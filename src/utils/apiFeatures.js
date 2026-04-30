@@ -8,7 +8,7 @@ class APIFeatures {
   // Advanced Filtering (?price[gte]=100&type=villa)
   filter() {
     const queryObj = { ...this.queryString };
-    const excluded = ['page', 'sort', 'limit', 'fields', 'search'];
+    const excluded = ['page', 'sort', 'limit', 'fields', 'search', 'cursor'];
     excluded.forEach((el) => delete queryObj[el]);
 
     let queryStr = JSON.stringify(queryObj);
@@ -25,15 +25,18 @@ class APIFeatures {
   search() {
     if (!this.queryString.search) return this;
 
-    const s = this.queryString.search.trim();
+    // Sanitize and limit search string
+    const s = this.queryString.search.trim().substring(0, 100).replace(/[$.]/g, '');
     if (!s) return this;
 
     // $text leverages MongoDB's weighted full-text index — no collection scan.
     const textQuery = { $text: { $search: s } };
 
     // Keep filterQuery in sync so countDocuments() returns the correct total.
-    this.filterQuery    = { ...this.filterQuery, ...textQuery };
-    this.query          = this.query.find(textQuery);
+    this.filterQuery    = { ...textQuery, ...this.filterQuery }; // Text priority
+    
+    // Applying controlled filters after text search
+    this.query          = this.query.find(this.filterQuery);
     this._textSearch    = true; // tell sort() to rank by relevance
     return this;
   }
@@ -44,7 +47,7 @@ class APIFeatures {
     if (this._textSearch && !this.queryString.sort) {
       this.query = this.query
         .select({ score: { $meta: 'textScore' } })
-        .sort({ score: { $meta: 'textScore' } });
+        .sort({ score: { $meta: 'textScore' }, createdAt: -1 });
       return this;
     }
 
@@ -68,10 +71,36 @@ class APIFeatures {
   }
 
   paginate() {
+    // Cursor-based pagination (Compound: createdAt + _id)
+    if (this.queryString.cursor) {
+      const [dateValue, idValue] = this.queryString.cursor.split('_');
+      if (dateValue && idValue) {
+        const date = new Date(dateValue);
+        const ObjectId = require('mongoose').Types.ObjectId;
+        
+        // Ensure valid date and ObjectId
+        if (!isNaN(date.getTime()) && ObjectId.isValid(idValue)) {
+          // If we're sorting by -createdAt (default)
+          this.query = this.query.find({
+            $or: [
+              { createdAt: { $lt: date } },
+              { createdAt: date, _id: { $lt: new ObjectId(idValue) } }
+            ]
+          });
+        }
+      }
+    }
+
     const page  = this.queryString.page  * 1 || 1;
     const limit = this.queryString.limit * 1 || 10;
     const skip  = (page - 1) * limit;
-    this.query  = this.query.skip(skip).limit(limit);
+    
+    // We still apply limit. We can skip if cursor is not provided.
+    if (!this.queryString.cursor) {
+       this.query = this.query.skip(skip);
+    }
+    
+    this.query = this.query.limit(limit);
     return this;
   }
 }
