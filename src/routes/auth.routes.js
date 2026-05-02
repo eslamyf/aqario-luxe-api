@@ -260,7 +260,7 @@ router.patch('/admin/users/:userId/role', protect, restrictTo('admin'), validate
 
 /**
  * @swagger
- * /auth/google:
+ * /auth/google-login:
  *   post:
  *     tags: [🔐 Auth]
  *     summary: Sign in / Sign up with Google
@@ -302,7 +302,6 @@ router.patch('/admin/users/:userId/role', protect, restrictTo('admin'), validate
  *                   type: object
  *                   properties:
  *                     accessToken:  { type: string }
- *                     refreshToken: { type: string }
  *                     user:         { $ref: '#/components/schemas/User' }
  *       400:
  *         description: Token missing or email not verified
@@ -311,6 +310,6 @@ router.patch('/admin/users/:userId/role', protect, restrictTo('admin'), validate
  *       403:
  *         description: Account banned or suspended
  */
-router.post('/google', googleAuthController.googleAuth);
+router.post('/google-login', googleAuthController.googleAuth);
 
 module.exports = router;

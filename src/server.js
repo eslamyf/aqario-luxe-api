@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const http        = require('http');
 const express     = require('express');
 const cors        = require('cors');
@@ -87,6 +87,15 @@ const app = express();
 const server = http.createServer(app);
 const io = initSocket(server);
 
+// ── CORS FIRST — Before all other middleware ──────────────────
+app.use(cors({
+  origin: CLIENT_URL,
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Request-Id'],
+  exposedHeaders: ['X-Request-Id'],
+}));
+
 // ── Middlewares ────────────────────────────────────────────
 app.use(requestLogger);
 app.use(compression());
@@ -103,14 +112,7 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
-}));
-
-app.use(cors({
-  origin: CLIENT_URL,
-  credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','X-Request-Id'],
-  exposedHeaders: ['X-Request-Id'],
+  crossOriginOpenerPolicy: false,
 }));
 
 // Body parsing
@@ -127,7 +129,7 @@ app.use(i18nMiddleware.handle(i18next));
 // Rate limiting (disabled in tests to allow fast test execution without lockouts)
 if (process.env.NODE_ENV !== 'test') {
   app.use('/api', globalLimiter);
-  app.use('/api/v1/auth', authLimiter);
+  // app.use('/api/v1/auth', authLimiter); // Temporarily disabled for Google login testing
 }
 
 // Cookie parsing (must be before routes that use cookies)

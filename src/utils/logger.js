@@ -1,6 +1,7 @@
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const path = require('path');
+const util = require('util');
 
 const logDir = path.join(process.cwd(), 'logs');
 
@@ -13,9 +14,17 @@ const formats = winston.format.combine(
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'HH:mm:ss' }),
-  winston.format.printf(({ level, message, timestamp, stack }) =>
-    `${timestamp} [${level}]: ${stack || message}`
-  )
+  winston.format.printf(({ level, message, timestamp, stack, ...meta }) => {
+    let msg = stack || message;
+    if (typeof msg === 'object') {
+      msg = util.inspect(msg, { depth: 3, colors: true });
+    }
+    
+    // If there's extra meta data (like requestId from requestLogger), include it
+    const metaStr = Object.keys(meta).length ? ` ${util.inspect(meta, { colors: true })}` : '';
+    
+    return `${timestamp} [${level}]: ${msg}${metaStr}`;
+  })
 );
 
 const transports = [
@@ -62,7 +71,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const logger = winston.createLogger({
-  level:      process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'warn' : 'debug'),
+  level:      process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'warn' : 'info'),
   format:     formats,
   transports,
   exceptionHandlers,

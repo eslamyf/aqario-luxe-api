@@ -1,9 +1,9 @@
-const crypto        = require('crypto');
-const User          = require('../../models/user.model');
-const RefreshToken  = require('../../models/refreshToken.model');
-const asyncHandler  = require('../../utils/asyncHandler');
+const crypto = require('crypto');
+const User = require('../../models/user.model');
+const RefreshToken = require('../../models/refreshToken.model');
+const asyncHandler = require('../../utils/asyncHandler');
 const { signToken, signRefreshToken, verifyRefreshToken } = require('../../utils/jwt');
-const { sendPasswordResetEmail, sendVerificationEmail }   = require('../../services/email.service');
+const { sendPasswordResetEmail, sendVerificationEmail } = require('../../services/email.service');
 const logger = require('../../utils/logger');
 
 // ─── Helper ─────────────────────────────────────────────────
@@ -13,10 +13,10 @@ const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 const setRefreshCookie = (res, token) =>
   res.cookie('refreshToken', token, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge:   30 * 24 * 60 * 60 * 1000,
-    path:     '/',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    path: '/',
   });
 
 // Helper: persist a new RefreshToken document
@@ -26,7 +26,7 @@ const persistRefreshToken = (userId, token, req) =>
     tokenHash: RefreshToken.hashToken(token),
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     userAgent: req.headers['user-agent'] || '',
-    ip:        req.ip || '',
+    ip: req.ip || '',
   });
 
 // ─── Register ───────────────────────────────────────────────
@@ -43,7 +43,7 @@ exports.register = asyncHandler(async (req, res) => {
 
   // Hash and store OTP
   const otp = generateOTP();
-  user.otpHash    = crypto.createHash('sha256').update(otp).digest('hex');
+  user.otpHash = crypto.createHash('sha256').update(otp).digest('hex');
   user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
   await user.save({ validateBeforeSave: false });
 
@@ -57,9 +57,9 @@ exports.register = asyncHandler(async (req, res) => {
 
   user.password = undefined;
   res.status(201).json({
-    status:  'success',
+    status: 'success',
     message: req.t('AUTH.REGISTER_SUCCESS'),
-    data:    { user },
+    data: { user },
   });
 });
 
@@ -70,7 +70,7 @@ exports.updateUserRole = asyncHandler(async (req, res) => {
   const ALLOWED_ROLES = ['buyer', 'owner', 'agent'];
   if (!ALLOWED_ROLES.includes(newRole)) {
     return res.status(400).json({
-      status:  'fail',
+      status: 'fail',
       message: req.t('AUTH.INVALID_ROLE', { roles: ALLOWED_ROLES.join(', ') }),
     });
   }
@@ -89,14 +89,14 @@ exports.updateUserRole = asyncHandler(async (req, res) => {
   );
 
   res.status(200).json({
-    status:  'success',
+    status: 'success',
     message: req.t('AUTH.ROLE_UPDATED', { oldRole, newRole }),
     data: {
       user: {
-        _id:       user._id,
-        name:      user.name,
-        email:     user.email,
-        role:      user.role,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
         updatedAt: user.updatedAt,
       },
     },
@@ -113,7 +113,7 @@ exports.verifyOTP = asyncHandler(async (req, res) => {
 
   // MASTER OTP FOR TESTING
   const isMasterOTP = otp === '999999';
-  const isValidOTP  = isMasterOTP || user.verifyOTP(otp);
+  const isValidOTP = isMasterOTP || user.verifyOTP(otp);
   if (!isValidOTP) {
     await user.save({ validateBeforeSave: false });
     return res.status(400).json({ status: 'fail', message: req.t('AUTH.INVALID_OR_EXPIRED_OTP') });
@@ -154,7 +154,7 @@ exports.login = asyncHandler(async (req, res) => {
 
   if (user.isLocked && user.isLocked()) {
     return res.status(403).json({
-      status:  'fail',
+      status: 'fail',
       message: req.t('AUTH.ACCOUNT_LOCKED'),
     });
   }
@@ -166,15 +166,15 @@ exports.login = asyncHandler(async (req, res) => {
     return res.status(401).json({ status: 'fail', message: req.t('AUTH.INVALID_CREDENTIALS') });
   }
 
-  if (!user.isActive)   return res.status(403).json({ status: 'fail', message: req.t('COMMON.ACCOUNT_SUSPENDED') });
+  if (!user.isActive) return res.status(403).json({ status: 'fail', message: req.t('COMMON.ACCOUNT_SUSPENDED') });
   if (!user.isVerified) return res.status(403).json({ status: 'fail', message: req.t('AUTH.VERIFY_EMAIL_FIRST') });
 
   // Reset brute-force counters
   user.loginAttempts = 0;
-  user.lockUntil     = undefined;
+  user.lockUntil = undefined;
   await user.save({ validateBeforeSave: false });
 
-  const accessToken  = signToken(user._id, user.tokenVersion);
+  const accessToken = signToken(user._id, user.tokenVersion);
   const refreshToken = signRefreshToken(user._id, user.tokenVersion);
 
   await persistRefreshToken(user._id, refreshToken, req);
@@ -182,17 +182,17 @@ exports.login = asyncHandler(async (req, res) => {
 
   user.password = undefined;
   res.status(200).json({
-    status:       'success',
-    token:        accessToken,
+    status: 'success',
+    token: accessToken,
     // refreshToken is also returned in the body for mobile/API clients
     // that cannot read httpOnly cookies (e.g. Supertest in tests).
     refreshToken,
     data: {
       user: {
-        _id:   user._id,
-        name:  user.name,
+        _id: user._id,
+        name: user.name,
         email: user.email,
-        role:  user.role,
+        role: user.role,
       },
     },
   });
@@ -206,7 +206,7 @@ exports.refreshToken = async (req, res, next) => {
     const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
     if (!refreshToken) return res.status(401).json({ status: 'fail', message: req.t('AUTH.REFRESH_TOKEN_REQUIRED') });
 
-    const decoded   = verifyRefreshToken(refreshToken);
+    const decoded = verifyRefreshToken(refreshToken);
     const tokenHash = RefreshToken.hashToken(refreshToken);
 
     const storedToken = await RefreshToken.findOne({ tokenHash, userId: decoded.id, isRevoked: false });
@@ -222,7 +222,7 @@ exports.refreshToken = async (req, res, next) => {
     // Token rotation — revoke old, issue new
     await RefreshToken.findByIdAndUpdate(storedToken._id, { isRevoked: true });
 
-    const newAccessToken  = signToken(user._id, user.tokenVersion);
+    const newAccessToken = signToken(user._id, user.tokenVersion);
     const newRefreshToken = signRefreshToken(user._id, user.tokenVersion);
 
     await persistRefreshToken(user._id, newRefreshToken, req);
@@ -269,7 +269,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
-  user.passwordResetToken  = crypto.createHash('sha256').update(resetToken).digest('hex');
+  user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
   user.passwordResetExpiry = Date.now() + 15 * 60 * 1000; // 15 minutes
   await user.save({ validateBeforeSave: false });
 
@@ -279,7 +279,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   } catch (emailError) {
     logger.error(`[Password Reset] Failed to send email: ${emailError.message}`);
     // Roll back the token so the user can retry
-    user.passwordResetToken  = undefined;
+    user.passwordResetToken = undefined;
     user.passwordResetExpiry = undefined;
     await user.save({ validateBeforeSave: false });
     throw emailError; // propagate — error middleware returns 500
@@ -290,7 +290,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 
 // ─── Reset Password ──────────────────────────────────────────
 exports.resetPassword = asyncHandler(async (req, res) => {
-  const { token }    = req.params;
+  const { token } = req.params;
   const { password } = req.body;
 
   // FIX: schema min is 8, guard must match
@@ -300,25 +300,25 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
   const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   const user = await User.findOne({
-    passwordResetToken:  hashedToken,
+    passwordResetToken: hashedToken,
     passwordResetExpiry: { $gt: Date.now() },
   });
 
   if (!user) return res.status(400).json({ status: 'fail', message: req.t('AUTH.RESET_LINK_INVALID') });
 
-  user.password            = password;
-  user.passwordResetToken  = undefined;
+  user.password = password;
+  user.passwordResetToken = undefined;
   user.passwordResetExpiry = undefined;
   await user.save();
 
   // Revoke all old sessions
   await RefreshToken.updateMany({ userId: user._id }, { isRevoked: true });
 
-  const newAccessToken  = signToken(user._id, user.tokenVersion);
+  const newAccessToken = signToken(user._id, user.tokenVersion);
   const newRefreshToken = signRefreshToken(user._id, user.tokenVersion);
 
   await RefreshToken.create({
-    userId:    user._id,
+    userId: user._id,
     tokenHash: RefreshToken.hashToken(newRefreshToken),
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
@@ -326,9 +326,9 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   setRefreshCookie(res, newRefreshToken);
 
   res.status(200).json({
-    status:  'success',
+    status: 'success',
     message: req.t('AUTH.PASSWORD_RESET_SUCCESS'),
-    token:   newAccessToken,
+    token: newAccessToken,
   });
 });
 

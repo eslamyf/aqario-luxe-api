@@ -11,7 +11,7 @@ const requestLogger = (req, res, next) => {
   res.on('finish', () => {
     const duration = Date.now() - start;
     const level = res.statusCode >= 500 ? 'error'
-                : res.statusCode >= 400 ? 'warn' : 'http';
+                : res.statusCode >= 400 ? 'warn' : 'debug';
 
     logger[level]({
       requestId: req.requestId,

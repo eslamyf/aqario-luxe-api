@@ -10,7 +10,13 @@ let _io = null;
 const initAuctionJob = (io) => {
   _io = io;
 
+  let isProcessing = false;
   cron.schedule('* * * * *', async () => {
+    if (isProcessing) {
+      logger.warn('[AuctionJob] Previous job still running, skipping this execution');
+      return;
+    }
+    isProcessing = true;
     try {
       const now = new Date();
 
@@ -27,7 +33,8 @@ const initAuctionJob = (io) => {
         endDate: { $lt: now },
       }).populate('property', 'title').populate('seller', 'email name');
 
-      for (const auction of expiredAuctions) {
+      // Refactored to process concurrently and prevent node-cron missed execution warnings
+      const auctionPromises = expiredAuctions.map(async (auction) => {
         const winningBid = await Bid.findOne({ auction: auction._id, isWinning: true })
           .populate('bidder', 'name email');
 
@@ -51,33 +58,49 @@ const initAuctionJob = (io) => {
           });
         }
 
-        if (winner?.email) {
-          await sendAuctionWinnerEmail(winner.email, {
-            propertyTitle: auction.property?.title || 'Property',
-            finalBid,
-          }).catch((e) => logger.error(`[AuctionJob] Winner email error: ${e.message}`));
+        const notificationPromises = [];
 
-          await createNotification(_io, winner._id, {
-            type:    'auction',
-            title:   '🏆 Congratulations! You won the auction',
-            message: `You won the auction for "${auction.property?.title}" with a bid of ${finalBid}`,
-            link:    `/auctions/${auction._id}`,
-          }).catch(() => {});
+        if (winner?.email) {
+          notificationPromises.push(
+            sendAuctionWinnerEmail(winner.email, {
+              propertyTitle: auction.property?.title || 'Property',
+              finalBid,
+            }).catch((e) => logger.error(`[AuctionJob] Winner email error: ${e.message}`))
+          );
+
+          notificationPromises.push(
+            createNotification(_io, winner._id, {
+              type:    'auction',
+              title:   '🏆 Congratulations! You won the auction',
+              message: `You won the auction for "${auction.property?.title}" with a bid of ${finalBid}`,
+              link:    `/auctions/${auction._id}`,
+            }).catch(() => {})
+          );
         }
 
-        await createNotification(_io, auction.seller._id, {
-          type:    'auction',
-          title:   winner ? 'Your auction ended successfully' : 'Your auction ended with no bids',
-          message: winner
-            ? `Auction for "${auction.property?.title}" ended — Winner: ${winner.name} with bid ${finalBid}`
-            : `Auction for "${auction.property?.title}" ended with no bids`,
-          link: `/auctions/${auction._id}`,
-        }).catch(() => {});
+        notificationPromises.push(
+          createNotification(_io, auction.seller._id, {
+            type:    'auction',
+            title:   winner ? 'Your auction ended successfully' : 'Your auction ended with no bids',
+            message: winner
+              ? `Auction for "${auction.property?.title}" ended — Winner: ${winner.name} with bid ${finalBid}`
+              : `Auction for "${auction.property?.title}" ended with no bids`,
+            link: `/auctions/${auction._id}`,
+          }).catch(() => {})
+        );
+
+        // Execute all heavy IO (emails & socket notifications) for this auction concurrently
+        await Promise.all(notificationPromises);
 
         logger.info(`[AuctionJob] Closed auction ${auction._id} — Winner: ${winner?.name || 'None'}`);
-      }
+      });
+
+      // Settle all auctions concurrently. If one fails, the others still process.
+      await Promise.allSettled(auctionPromises);
     } catch (err) {
       logger.error(`[AuctionJob] Error: ${err.message}`);
+    } finally {
+      isProcessing = false;
     }
   });
 
