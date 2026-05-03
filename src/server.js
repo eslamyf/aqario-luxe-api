@@ -58,6 +58,7 @@ const { initAuctionJob }     = require('./jobs/auction.job');
 const { initSavedSearchJob } = require('./jobs/savedSearch.job');
 const { initBookingJob }     = require('./jobs/booking.job');
 const initPaymentExpiryJob   = require('./jobs/payment-expiry.job');
+const { initKycCleanupJob }  = require('./jobs/kyc-cleanup.job');
 // ── Routes ──────────────────────────────────────────────────
 const authRoutes           = require('./routes/auth.routes');
 const userRoutes           = require('./routes/user.routes');
@@ -193,7 +194,7 @@ const shutdown = async (signal) => {
   });
   setTimeout(() => process.exit(1), 10000);
 };
-['SIGTERM','SIGINT'].forEach(sig => process.on(sig, () => shutdown(sig)));
+['SIGTERM','SIGINT', 'SIGUSR2'].forEach(sig => process.on(sig, () => shutdown(sig)));
 process.on('unhandledRejection', (err) => { logger.error('Unhandled Rejection:', err.message); logger.error(err.stack); shutdown('unhandledRejection'); });
 process.on('uncaughtException', (err) => { logger.error('Uncaught Exception:', err.message); logger.error(err.stack); shutdown('uncaughtException'); });
 
@@ -211,6 +212,7 @@ const startServer = async () => {
     initSavedSearchJob(io);
     initBookingJob();
     initPaymentExpiryJob();  // ← Payment expiry cleanup job
+    initKycCleanupJob();     // ← KYC orphan doc cleanup (daily 03:00 AM)
   });
 };
 if (process.env.NODE_ENV !== 'test') {

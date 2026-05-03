@@ -174,5 +174,7 @@ router.patch('/:id/approve', restrictTo('owner','agent','admin'), bookingControl
  *       404: { $ref: '#/components/responses/404' }
  */
 router.patch('/:id/reject', restrictTo('owner','agent','admin'), bookingController.rejectBooking);
+router.patch('/admin/bulk-status', restrictTo('admin'), bookingController.bulkUpdateStatus);
+router.get('/admin/export', restrictTo('admin'), bookingController.exportBookings);
 
 module.exports = router;

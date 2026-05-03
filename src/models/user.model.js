@@ -101,6 +101,19 @@ const userSchema = new mongoose.Schema(
     kycApprovedAt: { type: Date, select: false },
     kycRejectionReason: { type: String, select: false },
     kycAttempts: { type: Number, default: 0, select: false },
+    kycVersion: { type: Number, default: 1 }, // Enterprise versioning for Admin reviews
+
+    // Property Ownership Verification (for Owners/Agents)
+    ownershipDocuments: [
+      {
+        imageUrl: { type: String },           // legacy field (images)
+        fileUrl: { type: String },            // new: Cloudinary URL (images OR PDFs)
+        fileName: { type: String },           // original file name
+        fileType: { type: String, enum: ['image', 'pdf', 'doc'], default: 'image' },
+        isTemporary: { type: Boolean, default: true }, // true until KYC is submitted
+        uploadedAt: { type: Date, default: Date.now }
+      }
+    ],
 
     //  Bank Accounts (for receiving/paying)
     bankAccounts: [
@@ -208,5 +221,10 @@ userSchema.methods.incLoginAttempts = function () {
     }
   }
 };
+
+// ── Performance Indexes (Admin User Management) ───────────────
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ isBanned: 1, createdAt: -1 });
+userSchema.index({ name: 'text', email: 'text' }); // full-text search
 
 module.exports = mongoose.model('User', userSchema);

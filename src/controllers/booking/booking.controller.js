@@ -204,3 +204,65 @@ exports.getBooking = async (req, res, next) => {
     next(err);
   }
 };
+
+// ─── Bulk Update Status ──────────────────────────────────────
+exports.bulkUpdateStatus = async (req, res, next) => {
+  try {
+    const { bookingIds, status } = req.body;
+    if (!bookingIds || !Array.isArray(bookingIds) || !status) {
+      return res.status(400).json({ status: 'fail', message: 'Booking IDs array and status are required' });
+    }
+
+    const { bulkUpdateStatusService } = require('../../services/booking.service');
+    const updated = await bulkUpdateStatusService(bookingIds, status, req.user._id);
+
+    res.status(200).json({
+      status: 'success',
+      message: `Successfully updated ${updated.length} bookings to ${status}`,
+      count: updated.length
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Export Bookings to CSV ──────────────────────────────────
+exports.exportBookings = async (req, res, next) => {
+  try {
+    const { status, search } = req.query;
+    const filter = {};
+    if (status && status !== 'all') filter.status = status;
+    
+    if (search && search.trim() !== '') {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      const User = require('../../models/user.model');
+      const Property = require('../../models/property.model');
+      
+      const [users, properties] = await Promise.all([
+        User.find({ $or: [{ name: searchRegex }, { email: searchRegex }] }).select('_id'),
+        Property.find({ title: searchRegex }).select('_id')
+      ]);
+      filter.$or = [
+        { user_id: { $in: users.map(u => u._id) } },
+        { property_id: { $in: properties.map(p => p._id) } }
+      ];
+    }
+
+    const bookings = await Booking.find(filter)
+      .populate('user_id', 'name email')
+      .populate('property_id', 'title price')
+      .sort('-created_at')
+      .lean();
+
+    let csv = 'Booking ID,Client,Email,Property,Amount,Status,Date\n';
+    bookings.forEach(b => {
+      csv += `${b._id},${b.user_id?.name || 'N/A'},${b.user_id?.email || 'N/A'},${b.property_id?.title || 'N/A'},${b.amount},${b.status},${b.created_at?.toISOString() || 'N/A'}\n`;
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=bookings-export-${Date.now()}.csv`);
+    res.status(200).send(csv);
+  } catch (err) {
+    next(err);
+  }
+};

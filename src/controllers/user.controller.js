@@ -22,13 +22,23 @@ exports.getAllUsers = asyncHandler(async (req, res) => {
       .lean(),
   ]);
 
+  const mappedUsers = users.map(user => {
+    return {
+      ...user,
+      photo: user.photo || '',
+      kycStatus: user.kyc?.status || 'not_submitted',
+      isBanned: user.status === 'banned',
+      isVerified: user.security?.emailVerified || user.kyc?.status === 'approved'
+    };
+  });
+
   res.status(200).json({
     status: 'success',
-    results: users.length,
+    results: mappedUsers.length,
     total,
     page,
     pages: Math.ceil(total / limit),
-    data: { users },
+    data: { users: mappedUsers },
   });
 });
 
@@ -116,6 +126,13 @@ exports.getMe = asyncHandler(async (req, res) => {
     dashboard.pendingVerifications = pendingVerifications;
   }
 
+  // Flattening data to maintain frontend compatibility
+  user.isVerified = user.security?.emailVerified || user.kyc?.status === 'approved';
+  user.kycStatus = user.kyc?.status || 'not_submitted';
+  user.kycRejectionReason = user.kyc?.rejectionReason || null;
+  user.photo = user.photo || '';
+  user.bio = user.bio || '';
+
   res.status(200).json({
     status: 'success',
     data: {
@@ -127,7 +144,7 @@ exports.getMe = asyncHandler(async (req, res) => {
         kycApproved: user.kycStatus === 'approved',
         kycRejected: user.kycStatus === 'rejected',
         kycPending: user.kycStatus === 'pending',
-        kycRejectionReason: user.kycRejectionReason || null,
+        kycRejectionReason: user.kycRejectionReason,
         ...dashboard,
       },
     },
@@ -137,16 +154,27 @@ exports.getMe = asyncHandler(async (req, res) => {
 // ─── Update My Profile ────────────────────────────────────────
 exports.updateMe = asyncHandler(async (req, res) => {
   // Prevent clients from escalating privileges via these fields
-  const { password, role, ...updateData } = req.body; // eslint-disable-line no-unused-vars
+  const { password, role, photo, bio, name, phone, ...otherData } = req.body;
 
-  if (req.body.photo) {
-    updateData.photo = req.body.photo;
-  }
+  const updateData = { ...otherData };
 
-  const user = await User.findByIdAndUpdate(req.user._id, updateData, {
+  if (name !== undefined) updateData.name = name;
+  if (phone !== undefined) updateData.phone = phone;
+
+  // Map flat frontend properties to schema structure
+  if (photo !== undefined) updateData.photo = photo;
+  if (bio !== undefined) updateData.bio = bio;
+
+  const user = await User.findByIdAndUpdate(req.user._id, { $set: updateData }, {
     new: true,
     runValidators: true,
-  });
+  }).lean();
+
+  // Flatten the returned user object for frontend consistency
+  user.isVerified = user.security?.emailVerified || user.kyc?.status === 'approved';
+  user.kycStatus = user.kyc?.status || 'not_submitted';
+  user.photo = user.photo || '';
+  user.bio = user.bio || '';
 
   res.status(200).json({ status: 'success', data: { user } });
 });

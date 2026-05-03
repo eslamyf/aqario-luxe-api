@@ -39,6 +39,19 @@ const bookingSchema = new mongoose.Schema(
       default: 'pending',
     },
 
+    // AUDIT TRAIL & HISTORY
+    statusHistory: [
+      {
+        status: String,
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        changedAt: { type: Date, default: Date.now },
+        reason: String
+      }
+    ],
+    lastActionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    lastActionAt: Date,
+    isPriority: { type: Boolean, default: false },
+
     // PAYMENT TRACKING
     paymentStatus: {
       type: String,
@@ -56,7 +69,7 @@ const bookingSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: { createdAt: 'created_at', updatedAt: false },
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   }
 );
 

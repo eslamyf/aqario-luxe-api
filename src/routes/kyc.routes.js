@@ -4,7 +4,7 @@ const kycController = require('../controllers/kyc/kyc.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
 const validate = require('../middlewares/validation.middleware');
-const { uploadKYCImage } = require('../middlewares/upload.middleware');
+const { uploadKYCImage, uploadOwnershipFile } = require('../middlewares/upload.middleware');
 
 // Apply authentication to all routes
 router.use(protect);
@@ -63,6 +63,18 @@ router.post('/', kycController.uploadKYCDocuments);
 router.post('/upload', uploadKYCImage, kycController.uploadKYCImageSingle);
 
 /**
+ * POST /api/v1/kyc/ownership/upload
+ * Upload a single ownership document (PDF/image) → saves to Cloudinary & DB immediately
+ */
+router.post('/ownership/upload', uploadOwnershipFile, kycController.uploadOwnershipFile);
+
+/**
+ * DELETE /api/v1/kyc/ownership/:docId
+ * Remove an ownership document by MongoDB _id
+ */
+router.delete('/ownership/:docId', kycController.deleteOwnershipFile);
+
+/**
  * @swagger
  * /kyc/status:
  *   get:
@@ -92,6 +104,13 @@ router.get('/status', kycController.getKYCStatus);
  */
 router.get('/me', kycController.getMyKYC);
 
+/**
+ * DELETE /api/v1/kyc/identity-document
+ * Immediately remove identity document (front/back card or passport) from DB
+ * Called when user presses "Remove" on an already-saved image
+ */
+router.delete('/identity-document', kycController.deleteIdentityDocument);
+
 // ─── ADMIN ROUTES ──────────────────────────────────────────
 router.use(restrictTo('admin'));
 
@@ -115,7 +134,7 @@ router.use(restrictTo('admin'));
  *       403:
  *         description: Admin access required
  */
-router.get('/pending', kycController.getPendingKYC);
+router.get('/list', kycController.getKYCList);
 
 /**
  * @swagger
@@ -206,5 +225,6 @@ router.patch('/:userId/reject', kycController.rejectKYC);
  *         description: User not found
  */
 router.patch('/:userId/reset', kycController.resetKYC);
+router.patch('/:userId/revert', kycController.revertKYC);
 
 module.exports = router;

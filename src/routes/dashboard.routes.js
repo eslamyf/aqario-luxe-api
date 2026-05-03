@@ -1,12 +1,12 @@
 const express = require('express');
-const router  = express.Router();
+const router = express.Router();
 const dashboardController = require('../controllers/dashboard/dashboard.controller');
-const { protect }   = require('../middlewares/auth.middleware');
-const restrictTo    = require('../middlewares/restrictTo.middleware');
-const paginate      = require('../middlewares/paginate');
-const User     = require('../models/user.model');
-const Booking  = require('../models/booking.model');
-const Payment  = require('../models/payment.model');
+const { protect } = require('../middlewares/auth.middleware');
+const restrictTo = require('../middlewares/restrictTo.middleware');
+const paginate = require('../middlewares/paginate');
+const User = require('../models/user.model');
+const Booking = require('../models/booking.model');
+const Payment = require('../models/payment.model');
 const Property = require('../models/property.model');
 const Favorite = require('../models/favorite.model');
 
@@ -24,24 +24,25 @@ router.use(protect);
  *     responses:
  *       200:
  *         description: Admin stats
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 data:
- *                   type: object
- *                   properties:
- *                     totalUsers:      { type: integer }
- *                     totalProperties: { type: integer }
- *                     totalBookings:   { type: integer }
- *                     totalRevenue:    { type: number }
- *                     activeAuctions:  { type: integer }
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
 router.get('/admin/stats', restrictTo('admin'), dashboardController.adminStats);
+
+/**
+ * @swagger
+ * /dashboard/admin/activity:
+ *   get:
+ *     tags: [📊 Dashboard]
+ *     summary: Get global system activity feed (admin only)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Activity feed stream
+ *       401: { $ref: '#/components/responses/401' }
+ *       403: { $ref: '#/components/responses/403' }
+ */
+router.get('/admin/activity', restrictTo('admin'), dashboardController.adminActivity);
 
 /**
  * @swagger
@@ -108,6 +109,7 @@ router.get('/admin/bookings', restrictTo('admin'), paginate(Booking), dashboardC
  *       403: { $ref: '#/components/responses/403' }
  */
 router.get('/admin/payments', restrictTo('admin'), paginate(Payment), dashboardController.recentPayments);
+router.get('/admin/properties', restrictTo('admin'), paginate(Property), dashboardController.recentProperties);
 
 /**
  * @swagger
@@ -156,7 +158,8 @@ router.patch('/admin/users/:id/role', restrictTo('admin'), dashboardController.c
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.patch('/admin/users/:id/ban', restrictTo('admin'), dashboardController.toggleBanUser);
+router.patch('/admin/users/:id/ban',        restrictTo('admin'), dashboardController.toggleBanUser);
+router.patch('/admin/users/:id/toggle-ban', restrictTo('admin'), dashboardController.toggleBanUser);
 
 /**
  * @swagger
@@ -285,7 +288,7 @@ router.delete('/admin/reviews/:id', restrictTo('admin'), dashboardController.del
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/owner/stats', restrictTo('owner','agent','admin'), dashboardController.ownerStats);
+router.get('/owner/stats', restrictTo('owner', 'agent', 'admin'), dashboardController.ownerStats);
 
 /**
  * @swagger
@@ -307,7 +310,7 @@ router.get('/owner/stats', restrictTo('owner','agent','admin'), dashboardControl
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/owner/properties', restrictTo('owner','agent','admin'), paginate(Property), dashboardController.ownerProperties);
+router.get('/owner/properties', restrictTo('owner', 'agent', 'admin'), paginate(Property), dashboardController.ownerProperties);
 
 /**
  * @swagger
@@ -329,7 +332,7 @@ router.get('/owner/properties', restrictTo('owner','agent','admin'), paginate(Pr
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/owner/bookings', restrictTo('owner','agent','admin'), paginate(Booking), dashboardController.ownerBookings);
+router.get('/owner/bookings', restrictTo('owner', 'agent', 'admin'), paginate(Booking), dashboardController.ownerBookings);
 
 // ─── Buyer ────────────────────────────────────────────────────
 

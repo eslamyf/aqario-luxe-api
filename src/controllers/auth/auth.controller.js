@@ -111,9 +111,9 @@ exports.verifyOTP = asyncHandler(async (req, res) => {
   if (!user) return res.status(400).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   if (user.isVerified) return res.status(400).json({ status: 'fail', message: req.t('AUTH.ACCOUNT_ALREADY_VERIFIED') });
 
-  // MASTER OTP FOR TESTING
-  const isMasterOTP = otp === '999999';
-  const isValidOTP = isMasterOTP || user.verifyOTP(otp);
+  // check OTP validity
+  const isValidOTP = user.verifyOTP(otp);
+
   if (!isValidOTP) {
     await user.save({ validateBeforeSave: false });
     return res.status(400).json({ status: 'fail', message: req.t('AUTH.INVALID_OR_EXPIRED_OTP') });
