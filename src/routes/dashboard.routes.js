@@ -338,24 +338,24 @@ router.get('/owner/bookings', restrictTo('owner', 'agent', 'admin'), paginate(Bo
 
 /**
  * @swagger
- * /dashboard/buyer/stats:
+ * /dashboard/me/stats:
  *   get:
  *     tags: [📊 Dashboard]
- *     summary: Get my buyer dashboard statistics
+ *     summary: Get my personal dashboard statistics
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: Buyer stats
+ *         description: Personal stats
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/buyer/stats', dashboardController.buyerStats);
+router.get('/me/stats', dashboardController.buyerStats);
 
 /**
  * @swagger
- * /dashboard/buyer/bookings:
+ * /dashboard/me/bookings:
  *   get:
  *     tags: [📊 Dashboard]
- *     summary: Get my bookings (buyer dashboard)
+ *     summary: Get my personal bookings
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -366,17 +366,17 @@ router.get('/buyer/stats', dashboardController.buyerStats);
  *         schema: { type: integer, default: 10 }
  *     responses:
  *       200:
- *         description: Buyer bookings
+ *         description: Personal bookings
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/buyer/bookings', paginate(Booking), dashboardController.buyerBookings);
+router.get('/me/bookings', paginate(Booking), dashboardController.buyerBookings);
 
 /**
  * @swagger
- * /dashboard/buyer/payments:
+ * /dashboard/me/payments:
  *   get:
  *     tags: [📊 Dashboard]
- *     summary: Get my payment history (buyer dashboard)
+ *     summary: Get my personal payments
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -387,17 +387,17 @@ router.get('/buyer/bookings', paginate(Booking), dashboardController.buyerBookin
  *         schema: { type: integer, default: 10 }
  *     responses:
  *       200:
- *         description: Buyer payments
+ *         description: Personal payments
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/buyer/payments', paginate(Payment), dashboardController.buyerPayments);
+router.get('/me/payments', paginate(Payment), dashboardController.buyerPayments);
 
 /**
  * @swagger
- * /dashboard/buyer/favorites:
+ * /dashboard/me/favorites:
  *   get:
  *     tags: [📊 Dashboard]
- *     summary: Get my saved favorites (buyer dashboard)
+ *     summary: Get my personal favorites
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -408,10 +408,10 @@ router.get('/buyer/payments', paginate(Payment), dashboardController.buyerPaymen
  *         schema: { type: integer, default: 10 }
  *     responses:
  *       200:
- *         description: Buyer favorites
+ *         description: Personal favorites
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/buyer/favorites', paginate(Favorite), dashboardController.buyerFavorites);
+router.get('/me/favorites', paginate(Favorite), dashboardController.buyerFavorites);
 
 // ─── Shared ───────────────────────────────────────────────────
 

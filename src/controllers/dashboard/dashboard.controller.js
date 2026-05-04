@@ -576,10 +576,10 @@ exports.buyerBookings = async (req, res, next) => {
 exports.buyerPayments = async (req, res, next) => {
   try {
     const { page, limit, skip } = res.locals.pagination;
-    const payments = await Payment.find({ user_id: req.user._id })
+    const payments = await Payment.find({ user: req.user._id })
       .skip(skip).limit(limit)
       .populate('booking_id', 'start_date end_date property_id').sort('-createdAt');
-    const total = await Payment.countDocuments({ user_id: req.user._id });
+    const total = await Payment.countDocuments({ user: req.user._id });
     res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: payments.length, data: { payments } });
   } catch (err) {
     next(err);
@@ -606,7 +606,7 @@ exports.activityFeed = async (req, res, next) => {
     const userId = req.user._id;
     const [recentBookings, recentPayments, recentInquiries] = await Promise.all([
       Booking.find({ user_id: userId }).sort('-created_at').limit(limit).populate('property_id', 'title'),
-      Payment.find({ user_id: userId }).sort('-createdAt').limit(limit),
+      Payment.find({ user: userId }).sort('-createdAt').limit(limit),
       Inquiry.find({ $or: [{ sender: userId }, { receiver: userId }] }).sort('-createdAt').limit(limit).populate('property', 'title'),
     ]);
     res.status(200).json({ status: 'success', data: { recentBookings, recentPayments, recentInquiries } });
