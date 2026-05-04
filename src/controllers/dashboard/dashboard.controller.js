@@ -578,7 +578,12 @@ exports.buyerPayments = async (req, res, next) => {
     const { page, limit, skip } = res.locals.pagination;
     const payments = await Payment.find({ user: req.user._id })
       .skip(skip).limit(limit)
-      .populate('booking_id', 'start_date end_date property_id').sort('-createdAt');
+      .populate({
+        path: 'booking',
+        select: 'start_date end_date amount status property_id',
+        populate: { path: 'property_id', select: 'title price location images' }
+      })
+      .sort('-createdAt');
     const total = await Payment.countDocuments({ user: req.user._id });
     res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: payments.length, data: { payments } });
   } catch (err) {

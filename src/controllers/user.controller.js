@@ -93,10 +93,11 @@ exports.getMe = asyncHandler(async (req, res) => {
     const ViewingRequest = require('../models/viewingRequest.model');
 
     const [savedPropertiesCount, myBookings, viewingRequests] = await Promise.all([
-      Favorite.countDocuments({ userId: user._id }),
-      Booking.find({ buyer: user._id })
+      Favorite.countDocuments({ user_id: user._id }),
+      Booking.find({ user_id: user._id })
         .limit(5)
-        .select('property status checkInDate checkOutDate')
+        .populate('property_id', 'title price images')
+        .select('property_id status start_date end_date amount')
         .lean(),
       ViewingRequest.find({ userId: user._id })
         .limit(5)
@@ -113,17 +114,24 @@ exports.getMe = asyncHandler(async (req, res) => {
     const Property = require('../models/property.model');
     const Booking = require('../models/booking.model');
 
-    const [totalUsers, totalProperties, totalBookings, pendingVerifications] = await Promise.all([
+    const [totalUsers, totalProperties, totalBookings, pendingVerifications, personalBookings] = await Promise.all([
       User.countDocuments(),
       Property.countDocuments(),
       Booking.countDocuments(),
       User.countDocuments({ isVerified: false }),
+      // Personal context for admin: their own bookings
+      Booking.find({ user_id: user._id })
+        .limit(5)
+        .populate('property_id', 'title price images')
+        .select('property_id status start_date end_date amount')
+        .lean(),
     ]);
 
     dashboard.totalUsers = totalUsers;
     dashboard.totalProperties = totalProperties;
     dashboard.totalBookings = totalBookings;
     dashboard.pendingVerifications = pendingVerifications;
+    dashboard.myBookings = personalBookings;
   }
 
   // Flattening data to maintain frontend compatibility
