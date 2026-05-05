@@ -39,7 +39,7 @@ const userSchema = new mongoose.Schema(
       default: 'local',
     },
 
-    phone:{ type: String, default: null },
+    phone: { type: String, default: null },
     role: {
       type: String,
       enum: { values: ['buyer', 'owner', 'agent', 'admin'], message: 'Invalid role' },
@@ -48,9 +48,41 @@ const userSchema = new mongoose.Schema(
     photo: { type: String, default: null },
     bio: { type: String, default: '' },
 
+    // ── Granular Permission System (Phase 3.3) ──────────────────
+    // Empty array = legacy Super Admin with full access (backwards compatible).
+    // Non-empty array = restricted admin with only listed permissions.
+    permissions: {
+      type: [String],
+      default: [],
+      enum: {
+        values: [
+          'approve_property', 'reject_property',
+          'approve_booking', 'reject_booking',
+          'ban_user', 'change_role', 'update_permissions',
+          'approve_kyc', 'reject_kyc',
+          'delete_review', 'view_audit_logs',
+          'manage_auctions', 'export_data', 'bulk_actions',
+        ],
+        message: 'Invalid permission: {VALUE}',
+      },
+    },
+
     isVerified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     isBanned: { type: Boolean, default: false },
+
+    //  Subscription Management
+    activeSubscription: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subscription',
+      default: null,
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ['none', 'active', 'expired', 'cancelled'],
+      default: 'none',
+      index: true,
+    },
 
     //  Security
     passwordChangedAt: { type: Date, select: false },
@@ -225,6 +257,7 @@ userSchema.methods.incLoginAttempts = function () {
 // ── Performance Indexes (Admin User Management) ───────────────
 userSchema.index({ role: 1, createdAt: -1 });
 userSchema.index({ isBanned: 1, createdAt: -1 });
+userSchema.index({ kycStatus: 1 });
 userSchema.index({ name: 'text', email: 'text' }); // full-text search
 
 module.exports = mongoose.model('User', userSchema);

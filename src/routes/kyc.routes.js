@@ -3,8 +3,10 @@ const router = express.Router();
 const kycController = require('../controllers/kyc/kyc.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
+const checkPermission = require('../middlewares/checkPermission.middleware');
 const validate = require('../middlewares/validation.middleware');
 const { uploadKYCImage, uploadOwnershipFile } = require('../middlewares/upload.middleware');
+const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 
 // Apply authentication to all routes
 router.use(protect);
@@ -35,7 +37,7 @@ router.use(protect);
  *       401:
  *         description: Unauthorized
  */
-router.post('/', kycController.uploadKYCDocuments);
+router.post('/', idempotencyMiddleware, kycController.uploadKYCDocuments);
 
 /**
  * @swagger
@@ -171,7 +173,7 @@ router.get('/summary', kycController.getKYCSummary);
  *       404:
  *         description: User not found
  */
-router.patch('/:userId/approve', kycController.approveKYC);
+router.patch('/:userId/approve', checkPermission('approve_kyc'), idempotencyMiddleware, kycController.approveKYC);
 
 /**
  * @swagger
@@ -202,7 +204,7 @@ router.patch('/:userId/approve', kycController.approveKYC);
  *       404:
  *         description: User not found
  */
-router.patch('/:userId/reject', kycController.rejectKYC);
+router.patch('/:userId/reject', checkPermission('reject_kyc'), idempotencyMiddleware, kycController.rejectKYC);
 
 /**
  * @swagger
@@ -224,7 +226,7 @@ router.patch('/:userId/reject', kycController.rejectKYC);
  *       404:
  *         description: User not found
  */
-router.patch('/:userId/reset', kycController.resetKYC);
-router.patch('/:userId/revert', kycController.revertKYC);
+router.patch('/:userId/reset', checkPermission('reject_kyc'), idempotencyMiddleware, kycController.resetKYC);
+router.patch('/:userId/revert', checkPermission('reject_kyc'), idempotencyMiddleware, kycController.revertKYC);
 
 module.exports = router;

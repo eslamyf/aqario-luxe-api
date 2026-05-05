@@ -1,15 +1,16 @@
 const express = require('express');
-const router  = express.Router();
+const router = express.Router();
 const propertyController = require('../controllers/property/property.controller');
-const { protect }        = require('../middlewares/auth.middleware');
-const { requireKYC }     = require('../middlewares/kyc.middleware');
-const { isOwner }        = require('../middlewares/isOwner.middleware');
+const { protect } = require('../middlewares/auth.middleware');
+const { requireKYC } = require('../middlewares/kyc.middleware');
+const { requireActiveSubscription } = require('../middlewares/subscription.middleware');
+const { isOwner } = require('../middlewares/isOwner.middleware');
 const { uploadPropertyImages } = require('../middlewares/upload.middleware');
 const validate = require('../middlewares/validation.middleware');
 const { createPropertySchema, updatePropertySchema } = require('../validators/property.validators');
 const { cacheMiddleware, clearCache } = require('../middlewares/cache.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
-const trackView  = require('../middlewares/trackView.middleware');
+const trackView = require('../middlewares/trackView.middleware');
 const { uploadLimiter } = require('../middlewares/advancedRateLimit.middleware');
 
 /**
@@ -138,10 +139,11 @@ router.get('/:id', cacheMiddleware(60), trackView, propertyController.getPropert
  *       403: { $ref: '#/components/responses/403' }
  */
 router.post('/',
-  protect, 
+  protect,
   requireKYC,
-  restrictTo('owner','agent','admin'),
-  uploadLimiter, 
+  restrictTo('owner', 'agent', 'admin'),
+  requireActiveSubscription,
+  uploadLimiter,
   uploadPropertyImages,
   validate(createPropertySchema),
   (req, res, next) => { clearCache('/api/v1/properties'); next(); },
@@ -264,6 +266,6 @@ router.delete('/:id/images', protect, isOwner, propertyController.deleteProperty
  *       403: { $ref: '#/components/responses/403' }
  *       404: { $ref: '#/components/responses/404' }
  */
-router.delete('/:id', protect, isOwner, (req,res,next)=>{ clearCache('/api/v1/properties'); next(); }, propertyController.deleteProperty);
+router.delete('/:id', protect, isOwner, (req, res, next) => { clearCache('/api/v1/properties'); next(); }, propertyController.deleteProperty);
 
 module.exports = router;

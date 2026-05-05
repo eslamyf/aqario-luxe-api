@@ -1,34 +1,40 @@
-const cloudinary     = require('../../config/cloudinary');
-const Property       = require('../../models/property.model');
-const Review         = require('../../models/review.model');
-const Favorite       = require('../../models/favorite.model');
-const Booking        = require('../../models/booking.model');
-const Inquiry        = require('../../models/inquiry.model');
+const cloudinary = require('../../config/cloudinary');
+const Property = require('../../models/property.model');
+const Review = require('../../models/review.model');
+const Favorite = require('../../models/favorite.model');
+const Booking = require('../../models/booking.model');
+const Inquiry = require('../../models/inquiry.model');
 const ViewingRequest = require('../../models/viewingRequest.model');
-const APIFeatures    = require('../../utils/apiFeatures');
-const asyncHandler   = require('../../utils/asyncHandler');
-const AppError       = require('../../utils/AppError');
+const APIFeatures = require('../../utils/apiFeatures');
+const asyncHandler = require('../../utils/asyncHandler');
+const AppError = require('../../utils/AppError');
 const { clearCache } = require('../../middlewares/cache.middleware');
 const { checkSavedSearches } = require('../../services/savedSearch.service');
 
 // ─── Helper: derive Cloudinary public_id from URL ─────────────────────────────
 const publicIdFromUrl = (url) => {
-  const parts  = url.split('/');
-  const file   = parts[parts.length - 1].split('.')[0]; // filename without extension
+  const parts = url.split('/');
+  const file = parts[parts.length - 1].split('.')[0]; // filename without extension
   const folder = parts[parts.length - 2];              // folder segment
   return `${folder}/${file}`;
 };
 
 // ─── Create Property ──────────────────────────────────────────────────────────
 exports.createProperty = asyncHandler(async (req, res) => {
-  const images   = req.body.images || [];
+  const images = req.body.images || [];
   const property = await Property.create({ ...req.body, images, owner: req.user._id });
+
+  // Increment subscription usage if applicable
+  if (req.subscription) {
+    req.subscription.listingsUsedThisMonth += 1;
+    await req.subscription.save();
+  }
 
   clearCache('/api/v1/properties');
   clearCache('/api/v1/search');
 
   // Fire-and-forget: notify users with matching saved searches
-  checkSavedSearches(req.io, property).catch(() => {});
+  checkSavedSearches(req.io, property).catch(() => { });
 
   res.status(201).json({ status: 'success', data: { property } });
 });
@@ -70,7 +76,7 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
   if (req.user) {
     const favorites = await Favorite.find({ user_id: req.user._id }).select('property_id').lean();
     const favSet = new Set(favorites.map(f => f.property_id.toString()));
-    
+
     properties.forEach(p => {
       p.isFavorited = favSet.has(p._id.toString());
     });
@@ -84,13 +90,13 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({
-    status:  'success',
+    status: 'success',
     results: properties.length,
     total,
-    page:    req.query.page  * 1 || 1,
-    pages:   Math.ceil(total / (req.query.limit * 1 || 10)),
+    page: req.query.page * 1 || 1,
+    pages: Math.ceil(total / (req.query.limit * 1 || 10)),
     nextCursor, // Return cursor for frontend
-    data:    { properties },
+    data: { properties },
   });
 });
 
@@ -99,8 +105,8 @@ exports.getProperty = asyncHandler(async (req, res, next) => {
   const property = await Property.findById(req.params.id)
     .populate('owner', 'name email phone photo bio')
     .populate({
-      path:     'reviews',
-      options:  { limit: 5, sort: { createdAt: -1 } },
+      path: 'reviews',
+      options: { limit: 5, sort: { createdAt: -1 } },
       populate: { path: 'userId', select: 'name photo' },
     })
     .lean();
@@ -111,7 +117,7 @@ exports.getProperty = asyncHandler(async (req, res, next) => {
   let isFavorited = false;
   if (req.user) {
     const fav = await Favorite.findOne({
-      user_id:     req.user._id,
+      user_id: req.user._id,
       property_id: property._id,
     });
     isFavorited = !!fav;
@@ -143,7 +149,7 @@ exports.updateProperty = asyncHandler(async (req, res, next) => {
   }
 
   const property = await Property.findByIdAndUpdate(req.params.id, updates, {
-    new:           true,
+    new: true,
     runValidators: true,
   });
 
@@ -171,10 +177,10 @@ exports.deleteProperty = asyncHandler(async (req, res, next) => {
 
   // Cascade delete all related documents in parallel
   await Promise.all([
-    Review.deleteMany({ propertyId:  property._id }),
+    Review.deleteMany({ propertyId: property._id }),
     Favorite.deleteMany({ property_id: property._id }),
     Booking.deleteMany({ property_id: property._id }),
-    Inquiry.deleteMany({ property:    property._id }),
+    Inquiry.deleteMany({ property: property._id }),
     ViewingRequest.deleteMany({ property: property._id }),
   ]);
 
@@ -187,14 +193,14 @@ exports.deleteProperty = asyncHandler(async (req, res, next) => {
 // ─── Delete Single Image ──────────────────────────────────────────────────────
 exports.deletePropertyImage = asyncHandler(async (req, res, next) => {
   const { imageUrl } = req.body;
-  const property     = req.property; // injected by isOwner middleware
+  const property = req.property; // injected by isOwner middleware
 
   if (!imageUrl) return next(new AppError(req.t('PROPERTY.IMAGE_REQUIRED'), 400));
   if (!property.images.includes(imageUrl)) return next(new AppError(req.t('PROPERTY.IMAGE_NOT_FOUND'), 404));
   if (property.images.length === 1) return next(new AppError(req.t('PROPERTY.CANNOT_DELETE_ONLY_IMAGE'), 400));
 
   // Best-effort CDN removal
-  await cloudinary.uploader.destroy(publicIdFromUrl(imageUrl)).catch(() => {});
+  await cloudinary.uploader.destroy(publicIdFromUrl(imageUrl)).catch(() => { });
 
   property.images = property.images.filter(img => img !== imageUrl);
   await property.save();
@@ -221,22 +227,22 @@ exports.getMyProperties = asyncHandler(async (req, res) => {
   ]);
 
   res.status(200).json({
-    status:  'success',
+    status: 'success',
     total,
-    page:    Number(page),
-    pages:   Math.ceil(total / limit),
+    page: Number(page),
+    pages: Math.ceil(total / limit),
     results: properties.length,
-    data:    { properties },
+    data: { properties },
   });
 });
 
 // ─── Toggle Property Status ───────────────────────────────────────────────────
 exports.togglePropertyStatus = asyncHandler(async (req, res, next) => {
   const { status } = req.body;
-  const valid      = ['available', 'reserved', 'sold'];
+  const valid = ['available', 'reserved', 'sold'];
   if (!valid.includes(status)) return next(new AppError(req.t('PROPERTY.INVALID_STATUS'), 400));
 
-  const property  = req.property; // injected by isOwner middleware
+  const property = req.property; // injected by isOwner middleware
   property.status = status;
   await property.save();
 

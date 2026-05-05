@@ -4,8 +4,10 @@ const bookingController = require('../controllers/booking/booking.controller');
 const { protect }       = require('../middlewares/auth.middleware');
 const { requireKYC }    = require('../middlewares/kyc.middleware');
 const restrictTo        = require('../middlewares/restrictTo.middleware');
+const checkPermission   = require('../middlewares/checkPermission.middleware');
 const validate          = require('../middlewares/validation.middleware');
 const { createBookingSchema } = require('../validators/booking.validators');
+const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 
 router.use(protect);
 
@@ -42,7 +44,7 @@ router.use(protect);
  *         description: Property not available for the selected dates
  *       401: { $ref: '#/components/responses/401' }
  */
-router.post('/', requireKYC, validate(createBookingSchema), bookingController.createBooking);
+router.post('/', requireKYC, validate(createBookingSchema), idempotencyMiddleware, bookingController.createBooking);
 
 /**
  * @swagger
@@ -131,7 +133,7 @@ router.get('/:id', bookingController.getBooking);
  *       401: { $ref: '#/components/responses/401' }
  *       404: { $ref: '#/components/responses/404' }
  */
-router.patch('/:id/cancel', bookingController.cancelBooking);
+router.patch('/:id/cancel', idempotencyMiddleware, bookingController.cancelBooking);
 
 /**
  * @swagger
@@ -152,7 +154,7 @@ router.patch('/:id/cancel', bookingController.cancelBooking);
  *       403: { $ref: '#/components/responses/403' }
  *       404: { $ref: '#/components/responses/404' }
  */
-router.patch('/:id/approve', restrictTo('owner','agent','admin'), bookingController.approveBooking);
+router.patch('/:id/approve', restrictTo('owner','agent','admin'), checkPermission('approve_booking'), idempotencyMiddleware, bookingController.approveBooking);
 
 /**
  * @swagger
@@ -173,8 +175,8 @@ router.patch('/:id/approve', restrictTo('owner','agent','admin'), bookingControl
  *       403: { $ref: '#/components/responses/403' }
  *       404: { $ref: '#/components/responses/404' }
  */
-router.patch('/:id/reject', restrictTo('owner','agent','admin'), bookingController.rejectBooking);
-router.patch('/admin/bulk-status', restrictTo('admin'), bookingController.bulkUpdateStatus);
-router.get('/admin/export', restrictTo('admin'), bookingController.exportBookings);
+router.patch('/:id/reject', restrictTo('owner','agent','admin'), checkPermission('reject_booking'), idempotencyMiddleware, bookingController.rejectBooking);
+router.patch('/admin/bulk-status', restrictTo('admin'), checkPermission('bulk_actions'), idempotencyMiddleware, bookingController.bulkUpdateStatus);
+router.get('/admin/export', restrictTo('admin'), checkPermission('export_data'), bookingController.exportBookings);
 
 module.exports = router;

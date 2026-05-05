@@ -25,6 +25,41 @@ const PAYMENT_STATUS = {
   FAILED: 'failed',
 };
 
+const SUBSCRIPTION_STATUS = {
+  ACTIVE: 'active',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+};
+
+const SUBSCRIPTION_PLANS = {
+  basic: {
+    name: 'Basic',
+    price: 300,
+    currency: 'EGP',
+    maxListings: 3,
+    durationDays: 30,
+    features: ['Up to 3 active listings', 'Standard support'],
+  },
+  pro: {
+    name: 'Pro',
+    price: 1200,
+    currency: 'EGP',
+    maxListings: 10,
+    durationDays: 30,
+    features: ['Up to 10 active listings', 'Priority support', 'Featured listing (1)'],
+  },
+  enterprise: {
+    name: 'Enterprise',
+    price: 5000,
+    currency: 'EGP',
+    maxListings: -1, // unlimited
+    durationDays: 30,
+    features: ['Unlimited listings', 'Account manager', 'Featured listings (5)', 'Bulk upload'],
+  },
+};
+
 module.exports = {
   PAYMENT_STATUS: Object.freeze(PAYMENT_STATUS),
+  SUBSCRIPTION_STATUS: Object.freeze(SUBSCRIPTION_STATUS),
+  SUBSCRIPTION_PLANS: Object.freeze(SUBSCRIPTION_PLANS),
 };

@@ -3,6 +3,9 @@ const router = express.Router();
 const dashboardController = require('../controllers/dashboard/dashboard.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
+const ownershipGuard = require('../middlewares/ownershipGuard.middleware');
+const checkPermission = require('../middlewares/checkPermission.middleware');
+const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 const paginate = require('../middlewares/paginate');
 const User = require('../models/user.model');
 const Booking = require('../models/booking.model');
@@ -138,7 +141,12 @@ router.get('/admin/properties', restrictTo('admin'), paginate(Property), dashboa
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.patch('/admin/users/:id/role', restrictTo('admin'), dashboardController.changeUserRole);
+router.patch('/admin/users/:id/role',
+  restrictTo('admin'),
+  checkPermission('change_role'),
+  idempotencyMiddleware,
+  dashboardController.changeUserRole
+);
 
 /**
  * @swagger
@@ -158,8 +166,26 @@ router.patch('/admin/users/:id/role', restrictTo('admin'), dashboardController.c
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.patch('/admin/users/:id/ban',        restrictTo('admin'), dashboardController.toggleBanUser);
-router.patch('/admin/users/:id/toggle-ban', restrictTo('admin'), dashboardController.toggleBanUser);
+router.patch('/admin/users/:id/ban',
+  restrictTo('admin'),
+  checkPermission('ban_user'),
+  idempotencyMiddleware,
+  dashboardController.toggleBanUser
+);
+router.patch('/admin/users/:id/toggle-ban',
+  restrictTo('admin'),
+  checkPermission('ban_user'),
+  idempotencyMiddleware,
+  dashboardController.toggleBanUser
+);
+
+// Granular permissions management (Phase 3.3)
+router.patch('/admin/users/:id/permissions',
+  restrictTo('admin'),
+  checkPermission('update_permissions'),
+  idempotencyMiddleware,
+  dashboardController.updateUserPermissions
+);
 
 /**
  * @swagger
@@ -179,7 +205,13 @@ router.patch('/admin/users/:id/toggle-ban', restrictTo('admin'), dashboardContro
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.patch('/admin/properties/:id/approve', restrictTo('admin'), dashboardController.approveProperty);
+router.patch('/admin/properties/:id/approve',
+  restrictTo('admin'),
+  checkPermission('approve_property'),
+  ownershipGuard({ model: 'Property', ownerField: 'owner', idParam: 'id' }),
+  idempotencyMiddleware,
+  dashboardController.approveProperty
+);
 
 /**
  * @swagger
@@ -199,7 +231,13 @@ router.patch('/admin/properties/:id/approve', restrictTo('admin'), dashboardCont
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.patch('/admin/properties/:id/reject', restrictTo('admin'), dashboardController.rejectProperty);
+router.patch('/admin/properties/:id/reject',
+  restrictTo('admin'),
+  checkPermission('reject_property'),
+  ownershipGuard({ model: 'Property', ownerField: 'owner', idParam: 'id' }),
+  idempotencyMiddleware,
+  dashboardController.rejectProperty
+);
 
 /**
  * @swagger
@@ -219,7 +257,13 @@ router.patch('/admin/properties/:id/reject', restrictTo('admin'), dashboardContr
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.patch('/admin/auctions/:id/approve', restrictTo('admin'), dashboardController.approveAuction);
+router.patch('/admin/auctions/:id/approve',
+  restrictTo('admin'),
+  checkPermission('manage_auctions'),
+  ownershipGuard({ model: 'Auction', ownerField: 'seller', idParam: 'id' }),
+  idempotencyMiddleware,
+  dashboardController.approveAuction
+);
 
 /**
  * @swagger
@@ -258,7 +302,19 @@ router.get('/admin/reports/revenue', restrictTo('admin'), dashboardController.re
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.delete('/admin/reviews/:id', restrictTo('admin'), dashboardController.deleteReview);
+router.delete('/admin/reviews/:id',
+  restrictTo('admin'),
+  checkPermission('delete_review'),
+  idempotencyMiddleware,
+  dashboardController.deleteReview
+);
+
+// Audit Logs (Phase 3.2)
+router.get('/admin/audit-logs',
+  restrictTo('admin'),
+  checkPermission('view_audit_logs'),
+  dashboardController.getAuditLogs
+);
 
 // ─── Owner ────────────────────────────────────────────────────
 

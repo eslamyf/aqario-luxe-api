@@ -15,7 +15,8 @@
     "seed:admin":       "node src/seeds/admin-seed.js",
     "seed:properties":  "node src/seeds/property-seed.js",
     "seed:luxe":        "node src/seeds/luxe-property-seed.js",
-    "seed:all":         "npm run seed:admin && npm run seed:luxe"
+    "seed:enterprise":  "node src/seeds/enterprise-seed.js",
+    "seed:all":         "npm run seed:admin && npm run seed:enterprise"
   },
 
   "keywords": [

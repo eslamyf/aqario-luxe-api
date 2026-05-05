@@ -1,24 +1,24 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
-const http        = require('http');
-const express     = require('express');
-const cors        = require('cors');
-const helmet      = require('helmet');
+const http = require('http');
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
-const path        = require('path');
-const mongoose    = require('mongoose');
+const path = require('path');
+const mongoose = require('mongoose');
 const compression = require('compression');
 
 // ── Security middlewares ───────────────────────────────────
 let mongoSanitize, hpp;
-try { mongoSanitize = require('./utils/mongoSanitize'); } catch { try { mongoSanitize = require('express-mongo-sanitize'); } catch {} }
-try { hpp = require('hpp'); } catch {}
+try { mongoSanitize = require('./utils/mongoSanitize'); } catch { try { mongoSanitize = require('express-mongo-sanitize'); } catch { } }
+try { hpp = require('hpp'); } catch { }
 
 // Custom XSS sanitizer compatible with Express v5
 const xssClean = (() => {
   const escapeHtml = (str) => {
     if (typeof str !== 'string') return str;
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-              .replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
   };
   const sanitize = (val) => {
     if (typeof val === 'string') return escapeHtml(val);
@@ -35,7 +35,7 @@ const xssClean = (() => {
     if (req.params) req.params = sanitize(req.params);
     if (req.query) {
       for (const k of Object.keys(req.query)) {
-        try { req.query[k] = sanitize(req.query[k]); } catch (_) {}
+        try { req.query[k] = sanitize(req.query[k]); } catch (_) { }
       }
     }
     next();
@@ -43,40 +43,42 @@ const xssClean = (() => {
 })();
 
 // ── Core utils ─────────────────────────────────────────────
-const logger        = require('./utils/logger');
-const connectDB     = require('./config/db');
-const initSocket    = require('./config/socket');
+const logger = require('./utils/logger');
+const connectDB = require('./config/db');
+const initSocket = require('./config/socket');
 const { connectRedis } = require('./config/redis');
 const { setupSwagger } = require('./docs/swagger');
 const errorMiddleware = require('./middlewares/error.middleware');
-const requestLogger   = require('./middlewares/requestLogger.middleware');
+const requestLogger = require('./middlewares/requestLogger.middleware');
 const { globalLimiter, authLimiter } = require('./middlewares/advancedRateLimit.middleware');
 const { i18next, i18nMiddleware } = require('./config/i18n');
 
 // ── Jobs ────────────────────────────────────────────────────
-const { initAuctionJob }     = require('./jobs/auction.job');
+const { initAuctionJob } = require('./jobs/auction.job');
 const { initSavedSearchJob } = require('./jobs/savedSearch.job');
-const { initBookingJob }     = require('./jobs/booking.job');
-const initPaymentExpiryJob   = require('./jobs/payment-expiry.job');
-const { initKycCleanupJob }  = require('./jobs/kyc-cleanup.job');
+const { initBookingJob } = require('./jobs/booking.job');
+const initPaymentExpiryJob = require('./jobs/payment-expiry.job');
+const { initSubscriptionExpiryJob } = require('./jobs/subscription-expiry.job');
+const { initKycCleanupJob } = require('./jobs/kyc-cleanup.job');
 // ── Routes ──────────────────────────────────────────────────
-const authRoutes           = require('./routes/auth.routes');
-const userRoutes           = require('./routes/user.routes');
-const propertyRoutes       = require('./routes/property.routes');
-const reviewRoutes         = require('./routes/review.routes');
-const favoriteRoutes       = require('./routes/favorite.routes');
-const bookingRoutes        = require('./routes/booking.routes');
-const paymentRoutes        = require('./routes/payment.routes');
-const inquiryRoutes        = require('./routes/inquiry.routes');
+const authRoutes = require('./routes/auth.routes');
+const userRoutes = require('./routes/user.routes');
+const propertyRoutes = require('./routes/property.routes');
+const reviewRoutes = require('./routes/review.routes');
+const favoriteRoutes = require('./routes/favorite.routes');
+const bookingRoutes = require('./routes/booking.routes');
+const paymentRoutes = require('./routes/payment.routes');
+const inquiryRoutes = require('./routes/inquiry.routes');
 const viewingRequestRoutes = require('./routes/viewingRequest.routes');
-const dashboardRoutes      = require('./routes/dashboard.routes');
-const auctionRoutes        = require('./routes/auction.routes');
-const bidRoutes            = require('./routes/bid.routes');
-const notificationRoutes   = require('./routes/notification.routes');
-const searchRoutes         = require('./routes/search.routes');
-const reportRoutes         = require('./routes/report.routes');
-const healthRoutes         = require('./routes/health.routes');
-const kycRoutes            = require('./routes/kyc.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
+const auctionRoutes = require('./routes/auction.routes');
+const bidRoutes = require('./routes/bid.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const searchRoutes = require('./routes/search.routes');
+const reportRoutes = require('./routes/report.routes');
+const subscriptionRoutes = require('./routes/subscription.routes');
+const healthRoutes = require('./routes/health.routes');
+const kycRoutes = require('./routes/kyc.routes');
 const CLIENT_URL = process.env.CLIENT_URL;
 
 if (!CLIENT_URL) {
@@ -92,8 +94,8 @@ const io = initSocket(server);
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','X-Request-Id'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
   exposedHeaders: ['X-Request-Id'],
 }));
 
@@ -122,7 +124,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (mongoSanitize) app.use(mongoSanitize());
 if (xssClean) app.use(xssClean());
-if (hpp) app.use(hpp({ whitelist: ['price','bedrooms','bathrooms','area'] }));
+if (hpp) app.use(hpp({ whitelist: ['price', 'bedrooms', 'bathrooms', 'area'] }));
 
 // i18n — language detection via Accept-Language header
 app.use(i18nMiddleware.handle(i18next));
@@ -164,6 +166,7 @@ app.use(`${API}/auctions`, auctionRoutes);
 app.use(`${API}/bids`, bidRoutes);
 app.use(`${API}/notifications`, notificationRoutes);
 app.use(`${API}/reports`, reportRoutes);
+app.use(`${API}/subscriptions`, subscriptionRoutes);
 
 // Root
 app.get('/', (req, res) => res.json({
@@ -194,7 +197,7 @@ const shutdown = async (signal) => {
   });
   setTimeout(() => process.exit(1), 10000);
 };
-['SIGTERM','SIGINT', 'SIGUSR2'].forEach(sig => process.on(sig, () => shutdown(sig)));
+['SIGTERM', 'SIGINT', 'SIGUSR2'].forEach(sig => process.on(sig, () => shutdown(sig)));
 process.on('unhandledRejection', (err) => { logger.error('Unhandled Rejection:', err.message); logger.error(err.stack); shutdown('unhandledRejection'); });
 process.on('uncaughtException', (err) => { logger.error('Uncaught Exception:', err.message); logger.error(err.stack); shutdown('uncaughtException'); });
 
@@ -211,8 +214,9 @@ const startServer = async () => {
     initAuctionJob(io);
     initSavedSearchJob(io);
     initBookingJob();
-    initPaymentExpiryJob();  // ← Payment expiry cleanup job
-    initKycCleanupJob();     // ← KYC orphan doc cleanup (daily 03:00 AM)
+    initPaymentExpiryJob();
+    initSubscriptionExpiryJob();
+    initKycCleanupJob();
   });
 };
 if (process.env.NODE_ENV !== 'test') {

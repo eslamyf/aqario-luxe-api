@@ -15,6 +15,9 @@ const paymentSchema = new mongoose.Schema(
       ref: 'User',
       required: [true, 'User is required'],
       index: true,
+      // Alias: use 'userId' as an interchangeable query key in aggregations
+      // Note: Mongoose alias is not supported on ObjectId fields natively.
+      // Use the 'user' field directly. See docs/schemas.md for cross-model naming guide.
     },
     property: {
       type: mongoose.Schema.Types.ObjectId,

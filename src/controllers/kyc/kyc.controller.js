@@ -4,6 +4,7 @@
 
 const User = require('../../models/user.model');
 const logger = require('../../utils/logger');
+const { logAction } = require('../../services/audit.service');
 
 // ──────────────────────────────────────────────────────────
 // USER ENDPOINTS
@@ -65,7 +66,7 @@ exports.uploadKYCDocuments = async (req, res, next) => {
       user.kycSubmittedAt = new Date();
       user.kycVersion += 1; // Increment semantic version on final submission
     }
-    
+
     await user.save({ validateBeforeSave: false });
 
     logger.info(`[KYC] User ${user._id} submitted KYC (${documentType}) | ${user.ownershipDocuments.length} ownership docs → PENDING`);
@@ -215,7 +216,7 @@ exports.deleteIdentityDocument = async (req, res, next) => {
     }
 
     user.kycDocuments = [];
-    
+
     // If no ownership docs remain either, reset status
     if (user.ownershipDocuments.length === 0) {
       user.kycStatus = 'not_submitted';
@@ -401,25 +402,62 @@ exports.getKYCSummary = async (req, res, next) => {
  * Approve KYC submission (Admin only)
  */
 exports.approveKYC = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.userId);
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
 
+  try {
+    // Conflict of Interest: admin cannot approve their own KYC
+    if (req.params.userId === req.user._id.toString()) {
+      if (session) await session.abortTransaction();
+      return res.status(403).json({
+        status: 'fail',
+        code: 'CONFLICT_OF_INTEREST',
+        message: 'Conflict of interest: you cannot approve your own KYC.',
+      });
+    }
+
+    const user = await User.findById(req.params.userId).session(session);
     if (!user) {
+      if (session) await session.abortTransaction();
       return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
     }
 
-    // Update status regardless of previous status (as long as documents exist)
+    // Business Guard
+    if (user.kycStatus === 'approved') {
+      if (session) await session.abortTransaction();
+      return res.status(400).json({ status: 'fail', message: 'User KYC is already approved.' });
+    }
+    if (user.kycStatus === 'not_submitted') {
+      if (session) await session.abortTransaction();
+      return res.status(400).json({ status: 'fail', message: 'User has not submitted KYC.' });
+    }
+
+    const prevRole = user.role;
     user.kycStatus = 'approved';
     user.isVerified = true;
     user.kycVerifiedAt = new Date();
     user.kycApprovedBy = req.user._id;
     user.kycApprovedAt = new Date();
     user.kycRejectionReason = null;
-    
-    await user.save({ validateBeforeSave: false });
+
+    // ── AUTO-PROMOTE ──
+    if (user.role === 'buyer') {
+      user.role = 'owner';
+      logger.info(`[KYC] User ${user._id} AUTO-PROMOTED from buyer to owner`);
+    }
+
+    await user.save({ session, validateBeforeSave: false });
 
     logger.info(`[KYC] Admin ${req.user._id} APPROVED KYC for user ${user._id} (${user.name})`);
 
+    await logAction(
+      req.user._id, 'APPROVE_KYC', 'User', user._id,
+      { before: { kycStatus: prevStatus }, after: { kycStatus: 'approved' } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], session }
+    );
+
+    if (session) await session.commitTransaction();
     res.status(200).json({
       status: 'success',
       message: req.t('KYC.APPROVED'),
@@ -434,7 +472,10 @@ exports.approveKYC = async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 
@@ -443,31 +484,59 @@ exports.approveKYC = async (req, res, next) => {
  * Reject KYC submission (Admin only)
  */
 exports.rejectKYC = async (req, res, next) => {
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
+
   try {
     const { reason } = req.body;
 
     if (!reason || reason.trim().length === 0) {
+      if (session) await session.abortTransaction();
       return res.status(400).json({
         status: 'fail',
         message: req.t('KYC.REJECTION_REASON_REQUIRED'),
       });
     }
 
-    const user = await User.findById(req.params.userId);
+    // Conflict of Interest: admin cannot reject their own KYC
+    if (req.params.userId === req.user._id.toString()) {
+      if (session) await session.abortTransaction();
+      return res.status(403).json({
+        status: 'fail',
+        code: 'CONFLICT_OF_INTEREST',
+        message: 'Conflict of interest: you cannot reject your own KYC.',
+      });
+    }
 
+    const user = await User.findById(req.params.userId).session(session);
     if (!user) {
+      if (session) await session.abortTransaction();
       return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
     }
 
+    // Business Guard
+    if (user.kycStatus === 'rejected') {
+      if (session) await session.abortTransaction();
+      return res.status(400).json({ status: 'fail', message: 'User KYC is already rejected.' });
+    }
+
+    const prevStatus = user.kycStatus;
     user.kycStatus = 'rejected';
     user.isVerified = false;
     user.kycRejectionReason = reason;
     user.kycAttempts = (user.kycAttempts || 0) + 1;
-    
-    await user.save({ validateBeforeSave: false });
+    await user.save({ session, validateBeforeSave: false });
 
     logger.info(`[KYC] Admin ${req.user._id} REJECTED KYC for user ${user._id} (${user.name}): "${reason}"`);
 
+    await logAction(
+      req.user._id, 'REJECT_KYC', 'User', user._id,
+      { before: { kycStatus: prevStatus }, after: { kycStatus: 'rejected', reason } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], reason, session }
+    );
+
+    if (session) await session.commitTransaction();
     res.status(200).json({
       status: 'success',
       message: req.t('KYC.REJECTED'),
@@ -482,7 +551,10 @@ exports.rejectKYC = async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 
@@ -491,22 +563,49 @@ exports.rejectKYC = async (req, res, next) => {
  * Revert KYC status to pending for re-evaluation (Admin only)
  */
 exports.revertKYC = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.userId);
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
 
+  try {
+    // Conflict of Interest guard
+    if (req.params.userId === req.user._id.toString()) {
+      if (session) await session.abortTransaction();
+      return res.status(403).json({
+        status: 'fail',
+        code: 'CONFLICT_OF_INTEREST',
+        message: 'Conflict of interest: you cannot revert your own KYC.',
+      });
+    }
+
+    const user = await User.findById(req.params.userId).session(session);
     if (!user) {
+      if (session) await session.abortTransaction();
       return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
     }
 
+    // Business Guard
+    if (user.kycStatus === 'pending') {
+      if (session) await session.abortTransaction();
+      return res.status(400).json({ status: 'fail', message: 'User KYC is already pending.' });
+    }
+
+    const prevStatus = user.kycStatus;
     user.kycStatus = 'pending';
     user.isVerified = false;
     user.kycRejectionReason = null;
     user.kycApprovedAt = null;
-    
-    await user.save({ validateBeforeSave: false });
+    await user.save({ session, validateBeforeSave: false });
 
     logger.info(`[KYC] Admin ${req.user._id} REVERTED KYC status to PENDING for user ${user._id} (${user.name})`);
 
+    await logAction(
+      req.user._id, 'REVERT_KYC', 'User', user._id,
+      { before: { kycStatus: prevStatus }, after: { kycStatus: 'pending' } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], session }
+    );
+
+    if (session) await session.commitTransaction();
     res.status(200).json({
       status: 'success',
       message: 'KYC status reverted to pending successfully',
@@ -520,7 +619,10 @@ exports.revertKYC = async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 
@@ -529,30 +631,61 @@ exports.revertKYC = async (req, res, next) => {
  * Reset KYC status to allow resubmission (Admin only)
  */
 exports.resetKYC = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.userId);
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
 
+  try {
+    // Conflict of Interest guard
+    if (req.params.userId === req.user._id.toString()) {
+      if (session) await session.abortTransaction();
+      return res.status(403).json({
+        status: 'fail',
+        code: 'CONFLICT_OF_INTEREST',
+        message: 'Conflict of interest: you cannot reset your own KYC.',
+      });
+    }
+
+    const user = await User.findById(req.params.userId).session(session);
     if (!user) {
+      if (session) await session.abortTransaction();
       return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
     }
 
     if (user.kycStatus === 'not_submitted') {
+      if (session) await session.abortTransaction();
       return res.status(400).json({
         status: 'fail',
         message: req.t('KYC.ALREADY_NOT_SUBMITTED'),
       });
     }
 
-    // Reset to allow resubmission
+    const prevStatus = user.kycStatus;
+    const prevRole = user.role;
+
     user.kycStatus = 'not_submitted';
     user.kycDocuments = [];
     user.kycSubmittedAt = null;
     user.kycVerifiedAt = null;
     user.kycRejectionReason = null;
-    await user.save({ validateBeforeSave: false });
+
+    // ── ROLE REVERT ──
+    if (user.role === 'owner') {
+      user.role = 'buyer';
+      logger.info(`[KYC] User ${user._id} REVERTED from owner to buyer`);
+    }
+
+    await user.save({ session, validateBeforeSave: false });
 
     logger.info(`[KYC] Admin ${req.user._id} RESET KYC for user ${user._id} (${user.name})`);
 
+    await logAction(
+      req.user._id, 'RESET_KYC', 'User', user._id,
+      { before: { kycStatus: prevStatus }, after: { kycStatus: 'not_submitted' } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], session }
+    );
+
+    if (session) await session.commitTransaction();
     res.status(200).json({
       status: 'success',
       message: req.t('KYC.RESET'),
@@ -566,6 +699,9 @@ exports.resetKYC = async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };

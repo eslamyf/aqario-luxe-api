@@ -26,9 +26,9 @@ exports.getAllUsers = asyncHandler(async (req, res) => {
     return {
       ...user,
       photo: user.photo || '',
-      kycStatus: user.kyc?.status || 'not_submitted',
-      isBanned: user.status === 'banned',
-      isVerified: user.security?.emailVerified || user.kyc?.status === 'approved'
+      kycStatus: user.kycStatus || 'not_submitted',
+      isBanned: user.isBanned || false,
+      isVerified: user.isVerified || user.kycStatus === 'approved'
     };
   });
 
@@ -60,14 +60,17 @@ exports.getMe = asyncHandler(async (req, res) => {
 
   if (user.role === 'owner' || user.role === 'agent') {
     // ── Owner / Agent dashboard ──────────────────────────────
-    const Property = require('../models/property.model');
-    const Booking = require('../models/booking.model');
+    const Property       = require('../models/property.model');
+    const Booking        = require('../models/booking.model');
     const ViewingRequest = require('../models/viewingRequest.model');
+    const Favorite       = require('../models/favorite.model');
+    const Subscription   = require('../models/subscription.model');
 
+    // ── Hosting stats (properties they own) ──
     const [properties, totalProperties, activeListings] = await Promise.all([
       Property.find({ owner: user._id })
         .limit(5)
-        .select('title price bedrooms bathrooms area photo')
+        .select('title price bedrooms bathrooms area photo location')
         .lean(),
       Property.countDocuments({ owner: user._id }),
       Property.countDocuments({ owner: user._id, status: 'available' }),
@@ -75,16 +78,58 @@ exports.getMe = asyncHandler(async (req, res) => {
 
     const propertyIds = properties.map(p => p._id);
 
-    const [bookingRequests, upcomingViewings] = await Promise.all([
-      Booking.countDocuments({ property: { $in: propertyIds }, status: 'pending' }),
+    // ── All owner-related data in single parallel batch ──
+    const [
+      bookingRequests,
+      upcomingViewings,
+      savedPropertiesCount,
+      myBookings,
+      personalViewings,
+      activeSub,
+    ] = await Promise.all([
+      // Hosting: pending bookings ON owner's properties
+      Booking.countDocuments({ property_id: { $in: propertyIds }, status: 'pending' }),
+      // Hosting: pending viewing requests ON owner's properties
       ViewingRequest.countDocuments({ property: { $in: propertyIds }, status: 'pending' }),
+      // Personal: owner's own saved properties (owner can also be buyer)
+      Favorite.countDocuments({ user_id: user._id }),
+      // Personal: owner's own bookings on OTHER properties
+      Booking.find({ user_id: user._id })
+        .limit(5)
+        .populate('property_id', 'title price images')
+        .select('property_id status start_date end_date amount')
+        .lean(),
+      // Personal: owner's own viewing requests
+      ViewingRequest.find({ requester: user._id })
+        .limit(5)
+        .select('property status preferredDate preferredTime')
+        .lean(),
+      // Subscription info
+      Subscription.findOne({ user: user._id, status: 'active' })
+        .select('plan status maxListings listingsUsedThisMonth endDate')
+        .lean(),
     ]);
 
-    dashboard.properties = properties;
-    dashboard.totalProperties = totalProperties;
-    dashboard.activeListings = activeListings;
-    dashboard.bookingRequests = bookingRequests;
-    dashboard.upcomingViewings = upcomingViewings;
+    // ── Hosting data ──
+    dashboard.properties        = properties;
+    dashboard.totalProperties   = totalProperties;
+    dashboard.activeListings    = activeListings;
+    dashboard.bookingRequests   = bookingRequests;
+    dashboard.upcomingViewings  = upcomingViewings;
+    // ── Personal consumer data ──
+    dashboard.savedPropertiesCount = savedPropertiesCount;
+    dashboard.myBookings           = myBookings;
+    dashboard.personalViewings     = personalViewings;
+    // ── Subscription ──
+    dashboard.subscription = activeSub
+      ? {
+          plan:         activeSub.plan,
+          status:       activeSub.status,
+          listingsUsed: activeSub.listingsUsedThisMonth,
+          listingsLimit: activeSub.maxListings,
+          endDate:      activeSub.endDate,
+        }
+      : null;
 
   } else if (user.role === 'buyer') {
     // ── Buyer dashboard ──────────────────────────────────────
@@ -99,9 +144,9 @@ exports.getMe = asyncHandler(async (req, res) => {
         .populate('property_id', 'title price images')
         .select('property_id status start_date end_date amount')
         .lean(),
-      ViewingRequest.find({ userId: user._id })
+      ViewingRequest.find({ requester: user._id })
         .limit(5)
-        .select('property status scheduledDate')
+        .select('property status preferredDate preferredTime')
         .lean(),
     ]);
 
@@ -135,9 +180,9 @@ exports.getMe = asyncHandler(async (req, res) => {
   }
 
   // Flattening data to maintain frontend compatibility
-  user.isVerified = user.security?.emailVerified || user.kyc?.status === 'approved';
-  user.kycStatus = user.kyc?.status || 'not_submitted';
-  user.kycRejectionReason = user.kyc?.rejectionReason || null;
+  user.isVerified = user.isVerified || user.kycStatus === 'approved';
+  user.kycStatus = user.kycStatus || 'not_submitted';
+  user.kycRejectionReason = user.kycRejectionReason || null;
   user.photo = user.photo || '';
   user.bio = user.bio || '';
 
@@ -179,8 +224,8 @@ exports.updateMe = asyncHandler(async (req, res) => {
   }).lean();
 
   // Flatten the returned user object for frontend consistency
-  user.isVerified = user.security?.emailVerified || user.kyc?.status === 'approved';
-  user.kycStatus = user.kyc?.status || 'not_submitted';
+  user.isVerified = user.isVerified || user.kycStatus === 'approved';
+  user.kycStatus = user.kycStatus || 'not_submitted';
   user.photo = user.photo || '';
   user.bio = user.bio || '';
 

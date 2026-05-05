@@ -8,7 +8,9 @@ const Inquiry   = require('../../models/inquiry.model');
 const Auction   = require('../../models/auction.model');
 const Review    = require('../../models/review.model');
 const Bid       = require('../../models/bid.model');
-const { PAYMENT_STATUS } = require('../../utils/constants');
+const Subscription = require('../../models/subscription.model');
+const { PAYMENT_STATUS, SUBSCRIPTION_STATUS } = require('../../utils/constants');
+const { logAction, getAuditLogs } = require('../../services/audit.service');
 
 // ══════════════════════════════════════════════════════
 //  ADMIN DASHBOARD
@@ -17,20 +19,50 @@ const { PAYMENT_STATUS } = require('../../utils/constants');
 // @route GET /api/v1/dashboard/admin/stats
 exports.adminStats = async (req, res, next) => {
   try {
-    const [totalUsers, totalProperties, totalBookings, totalRevenue] = await Promise.all([
+    const [
+      totalUsers,
+      totalProperties,
+      totalBookings,
+      pendingKyc,
+      paymentRevenue,
+      subscriptionRevenue,
+      activeSubscriptions,
+    ] = await Promise.all([
       User.countDocuments(),
       Property.countDocuments(),
       Booking.countDocuments(),
-      // FIX #3 — Change 'completed' to 'paid'
+      User.countDocuments({ kycStatus: 'pending' }),
+      // Revenue from property payments (platform commission)
       Payment.aggregate([
-        { $match: { status: 'paid' } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+        { $match: { status: PAYMENT_STATUS.PAID } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' }, platformFees: { $sum: '$platformFee' } } },
       ]),
+      // Revenue from subscriptions
+      Subscription.aggregate([
+        { $match: { status: { $in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.EXPIRED] } } },
+        { $group: { _id: null, total: { $sum: '$price' }, count: { $sum: 1 } } },
+      ]),
+      // Count active subscriptions
+      Subscription.countDocuments({ status: SUBSCRIPTION_STATUS.ACTIVE }),
     ]);
 
     res.status(200).json({
       status: 'success',
-      data: { totalUsers, totalProperties, totalBookings, totalRevenue: totalRevenue[0]?.total || 0 },
+      data: {
+        totalUsers,
+        totalProperties,
+        totalBookings,
+        pendingKyc,
+        // Payment revenue
+        totalRevenue:     paymentRevenue[0]?.total       || 0,
+        platformFees:     paymentRevenue[0]?.platformFees || 0,
+        // Subscription revenue
+        subscriptionRevenue:  subscriptionRevenue[0]?.total || 0,
+        subscriptionCount:    subscriptionRevenue[0]?.count || 0,
+        activeSubscriptions,
+        // Combined platform revenue
+        totalPlatformRevenue: (paymentRevenue[0]?.platformFees || 0) + (subscriptionRevenue[0]?.total || 0),
+      },
     });
   } catch (err) {
     next(err);
@@ -329,8 +361,17 @@ exports.changeUserRole = async (req, res, next) => {
       return res.status(403).json({ status: 'fail', message: 'You cannot downgrade another admin.' });
     }
 
+    const prevRole = user.role;
     user.role = role;
     await user.save();
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    await logAction(
+      req.user._id, 'CHANGE_ROLE', 'User', user._id,
+      { before: { role: prevRole }, after: { role } },
+      { ip: req.ip, userAgent: req.headers['user-agent'] }
+    );
+
     res.status(200).json({ status: 'success', message: req.t('DASHBOARD.ROLE_UPDATED'), data: { user } });
   } catch (err) {
     next(err);
@@ -339,79 +380,156 @@ exports.changeUserRole = async (req, res, next) => {
 
 // @route PATCH /api/v1/dashboard/admin/users/:id/ban
 exports.toggleBanUser = async (req, res, next) => {
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
+
   try {
     // Prevent self-banning
     if (req.user.id === req.params.id) {
+      if (session) await session.abortTransaction();
       return res.status(403).json({ status: 'fail', message: 'You cannot ban your own account.' });
     }
 
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ status: 'fail', message: req.t('DASHBOARD.USER_NOT_FOUND') });
+    const user = await User.findById(req.params.id).session(session);
+    if (!user) {
+      if (session) await session.abortTransaction();
+      return res.status(404).json({ status: 'fail', message: req.t('DASHBOARD.USER_NOT_FOUND') });
+    }
 
     // Prevent banning admins
     if (user.role === 'admin') {
+      if (session) await session.abortTransaction();
       return res.status(403).json({ status: 'fail', message: 'Admin accounts cannot be banned.' });
     }
 
+    const wasBanned = user.isBanned;
     user.isBanned = !user.isBanned;
     user.isActive = !user.isBanned;
-    await user.save();
+    await user.save({ session });
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    const banAction = user.isBanned ? 'BAN_USER' : 'UNBAN_USER';
+    await logAction(
+      req.user._id, banAction, 'User', user._id,
+      { before: { isBanned: wasBanned }, after: { isBanned: user.isBanned } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], session }
+    );
+
+    if (session) await session.commitTransaction();
     res.status(200).json({
       status: 'success',
       message: user.isBanned ? req.t('DASHBOARD.USER_BANNED') : req.t('DASHBOARD.USER_UNBANNED'),
       data: { user },
     });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 
 // @route PATCH /api/v1/dashboard/admin/properties/:id/approve
 exports.approveProperty = async (req, res, next) => {
-  try {
-    const property = await Property.findByIdAndUpdate(
-      req.params.id,
-      { isApproved: true, status: 'available' },
-      { new: true, runValidators: false }
-    );
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
 
-    if (!property) {
+  try {
+    const existing = await Property.findById(req.params.id).session(session);
+    if (!existing) {
+      if (session) await session.abortTransaction();
       return res.status(404).json({ status: 'fail', message: 'Property not found' });
     }
 
-    res.status(200).json({ status: 'success', data: { property } });
+    // Business Guard
+    if (existing.isApproved) {
+      if (session) await session.abortTransaction();
+      return res.status(400).json({ status: 'fail', message: 'Property is already approved.' });
+    }
+
+    existing.isApproved = true;
+    existing.status = 'available';
+    await existing.save({ session });
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    await logAction(
+      req.user._id, 'APPROVE_PROPERTY', 'Property', existing._id,
+      { before: { isApproved: false, status: existing.status }, after: { isApproved: true, status: 'available' } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], session }
+    );
+
+    if (session) await session.commitTransaction();
+    res.status(200).json({ status: 'success', data: { property: existing } });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 
 // @route PATCH /api/v1/dashboard/admin/properties/:id/reject
 exports.rejectProperty = async (req, res, next) => {
-  try {
-    const property = await Property.findByIdAndUpdate(
-      req.params.id,
-      { isApproved: false },
-      { new: true, runValidators: false }
-    );
+  const useTransaction = process.env.NODE_ENV === 'production';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
 
-    if (!property) {
+  try {
+    const existing = await Property.findById(req.params.id).session(session);
+    if (!existing) {
+      if (session) await session.abortTransaction();
       return res.status(404).json({ status: 'fail', message: 'Property not found' });
     }
 
-    res.status(200).json({ status: 'success', data: { property } });
+    // Business Guard
+    if (!existing.isApproved && existing.status === 'unavailable') {
+      if (session) await session.abortTransaction();
+      return res.status(400).json({ status: 'fail', message: 'Property is already rejected/unavailable.' });
+    }
+
+    const prevStatus = existing.status;
+    const prevApproved = existing.isApproved;
+    existing.isApproved = false;
+    existing.status = 'unavailable';
+    await existing.save({ session });
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    await logAction(
+      req.user._id, 'REJECT_PROPERTY', 'Property', existing._id,
+      { before: { isApproved: prevApproved, status: prevStatus }, after: { isApproved: false, status: 'unavailable' } },
+      { ip: req.ip, userAgent: req.headers['user-agent'], reason: req.body.reason || null, session }
+    );
+
+    if (session) await session.commitTransaction();
+    res.status(200).json({ status: 'success', data: { property: existing } });
   } catch (err) {
+    if (session) await session.abortTransaction();
     next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 
 // @route PATCH /api/v1/dashboard/admin/auctions/:id/approve
 exports.approveAuction = async (req, res, next) => {
   try {
-    const auction = await Auction.findById(req.params.id);
+    const auction = req.guardedResource ? await Auction.findById(req.params.id) : await Auction.findById(req.params.id);
     if (!auction) return res.status(404).json({ status: 'fail', message: req.t('DASHBOARD.AUCTION_NOT_FOUND') });
+
+    const wasApproved = auction.isApproved;
     auction.isApproved = true;
-    // FIX — لا نغير status هنا، الـ cron job يتولى ذلك
+    // Cron job handles status transition — do not set status here
     await auction.save();
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    await logAction(
+      req.user._id, 'APPROVE_AUCTION', 'Auction', auction._id,
+      { before: { isApproved: wasApproved }, after: { isApproved: true } },
+      { ip: req.ip, userAgent: req.headers['user-agent'] }
+    );
+
     res.status(200).json({ status: 'success', message: req.t('DASHBOARD.AUCTION_APPROVED'), data: { auction } });
   } catch (err) {
     next(err);
@@ -452,12 +570,77 @@ exports.revenueReport = async (req, res, next) => {
 // @route DELETE /api/v1/dashboard/admin/reviews/:id
 exports.deleteReview = async (req, res, next) => {
   try {
-    // FIX — استخدام deleteOne() بدل findByIdAndDelete() حتى يُطلق الـ post('deleteOne') hook
-    // الذي يستدعي calcAverageRatings تلقائياً لإعادة حساب avgRating على العقار
+    // Use deleteOne() (not findByIdAndDelete) to trigger post('deleteOne') hook
+    // which calls calcAverageRatings and updates the property avgRating
     const review = await Review.findById(req.params.id);
     if (!review) return res.status(404).json({ status: 'fail', message: req.t('DASHBOARD.REVIEW_NOT_FOUND') });
+
+    const snapshot = { userId: review.userId, propertyId: review.propertyId, rating: review.rating };
     await review.deleteOne();
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    await logAction(
+      req.user._id, 'DELETE_REVIEW', 'Review', req.params.id,
+      { before: snapshot, after: null },
+      { ip: req.ip, userAgent: req.headers['user-agent'], reason: req.body.reason || null }
+    );
+
     res.status(200).json({ status: 'success', message: req.t('DASHBOARD.REVIEW_DELETED') });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @route GET /api/v1/dashboard/admin/audit-logs
+exports.getAuditLogs = async (req, res, next) => {
+  try {
+    const result = await getAuditLogs(req.query);
+    res.status(200).json({
+      status: 'success',
+      ...result,
+      data: { logs: result.logs },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @route PATCH /api/v1/dashboard/admin/users/:id/permissions
+exports.updateUserPermissions = async (req, res, next) => {
+  try {
+    // Prevent self-modification of permissions
+    if (req.user.id === req.params.id) {
+      return res.status(403).json({ status: 'fail', message: 'You cannot modify your own permissions.' });
+    }
+
+    const { permissions } = req.body;
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({ status: 'fail', message: 'permissions must be an array.' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ status: 'fail', message: req.t('DASHBOARD.USER_NOT_FOUND') });
+
+    if (user.role !== 'admin') {
+      return res.status(400).json({ status: 'fail', message: 'Permissions can only be set on admin accounts.' });
+    }
+
+    const prevPermissions = [...(user.permissions || [])];
+    user.permissions = permissions;
+    await user.save();
+
+    // ── Audit Trail ──────────────────────────────────────────────
+    await logAction(
+      req.user._id, 'UPDATE_PERMISSIONS', 'User', user._id,
+      { before: { permissions: prevPermissions }, after: { permissions } },
+      { ip: req.ip, userAgent: req.headers['user-agent'] }
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Permissions updated successfully.',
+      data: { user: { _id: user._id, name: user.name, email: user.email, permissions: user.permissions } },
+    });
   } catch (err) {
     next(err);
   }
@@ -477,11 +660,11 @@ exports.ownerStats = async (req, res, next) => {
       Booking.countDocuments({ property_id: { $in: propertyIds } }),
       Booking.countDocuments({ property_id: { $in: propertyIds }, status: 'pending' }),
       Payment.aggregate([
-        { $match: { status: PAYMENT_STATUS.PAID } }, // FIX — استخدام constant بدل 'paid'
-        { $lookup: { from: 'bookings', localField: 'booking_id', foreignField: '_id', as: 'booking' } },
-        { $unwind: '$booking' },
-        { $match: { 'booking.property_id': { $in: propertyIds } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
+        { $match: { status: PAYMENT_STATUS.PAID } },
+        { $lookup: { from: 'bookings', localField: 'booking', foreignField: '_id', as: 'bookingDoc' } },
+        { $unwind: '$bookingDoc' },
+        { $match: { 'bookingDoc.property_id': { $in: propertyIds } } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
       ]),
     ]);
 
