@@ -186,11 +186,14 @@ exports.getMe = asyncHandler(async (req, res) => {
   user.photo = user.photo || '';
   user.bio = user.bio || '';
 
+  console.log(`[DEBUG] getMe for ${user.email}: Role=${user.role}, Properties=${dashboard.properties?.length || 0}`);
+  
   res.status(200).json({
     status: 'success',
     data: {
       user,
       dashboard: {
+        ...dashboard,
         role: user.role,
         isVerified: user.isVerified,
         kycStatus: user.kycStatus,
@@ -198,7 +201,6 @@ exports.getMe = asyncHandler(async (req, res) => {
         kycRejected: user.kycStatus === 'rejected',
         kycPending: user.kycStatus === 'pending',
         kycRejectionReason: user.kycRejectionReason,
-        ...dashboard,
       },
     },
   });

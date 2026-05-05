@@ -257,7 +257,6 @@ userSchema.methods.incLoginAttempts = function () {
 // ── Performance Indexes (Admin User Management) ───────────────
 userSchema.index({ role: 1, createdAt: -1 });
 userSchema.index({ isBanned: 1, createdAt: -1 });
-userSchema.index({ kycStatus: 1 });
 userSchema.index({ name: 'text', email: 'text' }); // full-text search
 
 module.exports = mongoose.model('User', userSchema);
