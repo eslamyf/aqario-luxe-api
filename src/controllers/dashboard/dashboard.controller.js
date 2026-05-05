@@ -46,6 +46,9 @@ exports.adminStats = async (req, res, next) => {
       Subscription.countDocuments({ status: SUBSCRIPTION_STATUS.ACTIVE }),
     ]);
 
+    const totalSubRevenue = subscriptionRevenue[0]?.total || 0;
+    const totalPlatformFees = paymentRevenue[0]?.platformFees || 0;
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -53,15 +56,14 @@ exports.adminStats = async (req, res, next) => {
         totalProperties,
         totalBookings,
         pendingKyc,
-        // Payment revenue
-        totalRevenue:     paymentRevenue[0]?.total       || 0,
-        platformFees:     paymentRevenue[0]?.platformFees || 0,
-        // Subscription revenue
-        subscriptionRevenue:  subscriptionRevenue[0]?.total || 0,
-        subscriptionCount:    subscriptionRevenue[0]?.count || 0,
+        // Detailed revenue
+        propertyTotal:       paymentRevenue[0]?.total       || 0,
+        platformFees:        totalPlatformFees,
+        subscriptionRevenue: totalSubRevenue,
+        subscriptionCount:   subscriptionRevenue[0]?.count || 0,
         activeSubscriptions,
-        // Combined platform revenue
-        totalPlatformRevenue: (paymentRevenue[0]?.platformFees || 0) + (subscriptionRevenue[0]?.total || 0),
+        // The main KPI value for the dashboard
+        totalRevenue:        totalPlatformFees + totalSubRevenue,
       },
     });
   } catch (err) {
@@ -116,12 +118,28 @@ exports.adminActivity = async (req, res, next) => {
           pipeline: [
             { $sort: { created_at: -1 } },
             { $limit: limit },
+            // Join with property to get title
+            {
+              $lookup: {
+                from: 'properties',
+                localField: 'property_id',
+                foreignField: '_id',
+                as: 'property'
+              }
+            },
+            { $unwind: { path: '$property', preserveNullAndEmptyArrays: true } },
             {
               $project: {
                 _id: 0,
                 entityId: '$_id',
                 type: 'NEW_BOOKING',
-                message: 'New booking reservation created.',
+                message: { 
+                  $cond: {
+                    if: { $gt: [{ $strLenCP: { $ifNull: ['$property.title', ''] } }, 0] },
+                    then: { $concat: ['New booking for: ', '$property.title'] },
+                    else: 'New booking reservation created.'
+                  }
+                },
                 createdAt: '$created_at',
                 colorCode: 'gold'
               }
@@ -262,10 +280,38 @@ exports.recentBookings = async (req, res, next) => {
 exports.recentPayments = async (req, res, next) => {
   try {
     const { page, limit, skip } = res.locals.pagination;
-    const payments = await Payment.find().sort('-createdAt').skip(skip).limit(limit)
-      .populate('user', 'name email').populate('booking', 'start_date end_date amount');
+    
+    // Populate nested fields to satisfy the dashboard UI mapping
+    const rawPayments = await Payment.find()
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit)
+      .populate('user', 'name email photo')
+      .populate({
+        path: 'booking',
+        select: 'property_id amount start_date end_date',
+        populate: { path: 'property_id', select: 'title' }
+      })
+      .populate('property', 'title') // Fallback if booking is missing
+      .lean();
+
+    // Map to the shape expected by TransactionsTableComponent
+    const payments = rawPayments.map(p => ({
+      ...p,
+      user_id: p.user, // Alias for frontend
+      booking_id: p.booking, // Alias for frontend
+      amount: p.totalAmount, // Map totalAmount to amount
+    }));
+
     const total = await Payment.countDocuments();
-    res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: payments.length, data: { payments } });
+    res.status(200).json({ 
+      status: 'success', 
+      page, 
+      total, 
+      pages: Math.ceil(total / limit), 
+      results: payments.length, 
+      data: { payments } 
+    });
   } catch (err) {
     next(err);
   }
@@ -538,29 +584,76 @@ exports.approveAuction = async (req, res, next) => {
 
 // @route GET /api/v1/dashboard/admin/reports/revenue
 // FIX — Add year to group to differentiate between different years
+// @route GET /api/v1/dashboard/admin/reports/revenue
 exports.revenueReport = async (req, res, next) => {
   try {
-    const period = req.query.period || 'monthly'; // 'monthly' | 'yearly'
-    
-    let groupId = { year: { $year: '$createdAt' } };
-    let sortObj = { '_id.year': 1 };
-    
-    if (period === 'monthly') {
-      groupId.month = { $month: '$createdAt' };
-      sortObj['_id.month'] = 1;
-    }
+    const period = req.query.period || 'monthly';
+    const now = new Date();
+    const currentYear = now.getFullYear();
 
-    const report = await Payment.aggregate([
+    // ── 1. Aggregate Property Payments ──
+    const propertyRevenue = await Payment.aggregate([
       { $match: { status: PAYMENT_STATUS.PAID } },
       {
         $group: {
-          _id: groupId,
-          totalRevenue: { $sum: '$totalAmount' },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: sortObj },
+          _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+          total: { $sum: '$totalAmount' }
+        }
+      }
     ]);
+
+    // ── 2. Aggregate Subscription Revenue ──
+    const subscriptionRevenue = await Subscription.aggregate([
+      { $match: { status: { $in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.EXPIRED] } } },
+      {
+        $group: {
+          _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+          total: { $sum: '$price' }
+        }
+      }
+    ]);
+
+    // ── 3. Merge into Map ──
+    const revenueMap = {};
+    [...propertyRevenue, ...subscriptionRevenue].forEach(item => {
+      const key = `${item._id.year}-${item._id.month}`;
+      revenueMap[key] = (revenueMap[key] || 0) + item.total;
+    });
+
+    // ── 4. Generate series (Padding) ──
+    const report = [];
+    if (period === 'yearly') {
+      // Last 5 years
+      for (let i = 0; i < 5; i++) {
+        const year = currentYear - (4 - i);
+        const key = `${year}-null`; // Not using months for yearly
+        
+        // Sum all months for that year
+        let yearlyTotal = 0;
+        for (let m = 1; m <= 12; m++) {
+          yearlyTotal += revenueMap[`${year}-${m}`] || 0;
+        }
+
+        report.push({
+          _id: { year },
+          totalRevenue: yearlyTotal
+        });
+      }
+    } else {
+      // Last 12 months including current
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
+        const year = d.getFullYear();
+        const month = d.getMonth() + 1;
+        const key = `${year}-${month}`;
+        
+        report.push({
+          _id: { year, month },
+          totalRevenue: revenueMap[key] || 0
+        });
+      }
+    }
+
     res.status(200).json({ status: 'success', data: { report } });
   } catch (err) {
     next(err);
