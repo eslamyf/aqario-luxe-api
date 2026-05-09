@@ -17,7 +17,7 @@ const createAdmin = async () => {
     const adminData = {
       name: 'Super Admin',
       email: 'admin@luxe.com',
-      password: 'Admin@123456',
+      password: 'Admin123!@#',
       role: 'admin',
       isVerified: true,
       isActive: true
@@ -38,7 +38,7 @@ const createAdmin = async () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('✅ ADMIN ACCOUNT CREATED SUCCESSFULLY');
     console.log(`📧 Email:    ${newAdmin.email}`);
-    console.log(`🔑 Password:  Admin@123456`);
+    console.log(`🔑 Password: Admin123!@#`);
     console.log(`🆔 ID:        ${newAdmin._id}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
