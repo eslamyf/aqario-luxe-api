@@ -433,6 +433,7 @@ exports.approveKYC = async (req, res, next) => {
       return res.status(400).json({ status: 'fail', message: 'User has not submitted KYC.' });
     }
 
+    const prevStatus = user.kycStatus;
     const prevRole = user.role;
     user.kycStatus = 'approved';
     user.isVerified = true;
