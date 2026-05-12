@@ -44,6 +44,14 @@ router.post(
   paymentController.initiatePayment
 );
 
+// Helper for local development: Redirect Paymob response to local frontend
+// Must be BEFORE /:id route to avoid being caught by it!
+router.get('/success', (req, res) => {
+  const queryString = new URLSearchParams(req.query).toString();
+  const targetUrl = `${process.env.CLIENT_URL || 'http://localhost:4200'}/payment/success?${queryString}`;
+  res.redirect(targetUrl);
+});
+
 /**
  * @swagger
  * /payments/{id}:
@@ -169,6 +177,14 @@ router.post(
  *         description: Invalid signature
  */
 router.post('/webhook/paymob', webhookController.handlePaymobWebhook);
+
+// Allow GET requests for easy browser verification and Paymob dashboard validation
+router.get('/webhook/paymob', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Paymob Webhook endpoint is active and listening for POST requests!'
+  });
+});
 
 /**
  * @swagger

@@ -146,6 +146,61 @@ exports.verifyWebhookSignature = (payload, signature, secret) => {
   }
 };
 
+/**
+ * Verify Paymob webhook signature using HMAC-SHA512
+ * Paymob requires alphabetical concatenation of specific fields from the payload object.
+ */
+exports.verifyPaymobSignature = (payloadObj, signature, secret) => {
+  try {
+    if (!payloadObj || !signature || !secret) return false;
+
+    // Helper to extract nested properties safely
+    const getValue = (obj, path) => path.split('.').reduce((o, i) => (o !== undefined && o !== null ? o[i] : ''), obj) ?? '';
+    
+    const fields = [
+      'amount_cents',
+      'created_at',
+      'currency',
+      'error_occured',
+      'has_parent_transaction',
+      'id',
+      'integration_id',
+      'is_3d_secure',
+      'is_auth',
+      'is_capture',
+      'is_refunded',
+      'is_standalone_payment',
+      'is_voided',
+      'order.id',
+      'owner',
+      'pending',
+      'source_data.pan',
+      'source_data.sub_type',
+      'source_data.type',
+      'success'
+    ];
+    
+    // Concatenate fields exactly as strings
+    const concatenatedString = fields.map(field => {
+      const val = getValue(payloadObj, field);
+      // Strict equality to handle boolean true/false correctly as strings
+      return val !== null && val !== undefined && val !== '' ? String(val) : '';
+    }).join('');
+
+    const hmac = crypto.createHmac('sha512', secret);
+    hmac.update(concatenatedString);
+    const expectedSignature = hmac.digest('hex');
+
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature)
+    );
+  } catch (err) {
+    logger.error('[Encryption] verifyPaymobSignature error:', err);
+    return false;
+  }
+};
+
 module.exports = Object.freeze({
   encryptField: exports.encryptField,
   decryptField: exports.decryptField,
@@ -154,4 +209,5 @@ module.exports = Object.freeze({
   hashField: exports.hashField,
   generateToken: exports.generateToken,
   verifyWebhookSignature: exports.verifyWebhookSignature,
+  verifyPaymobSignature: exports.verifyPaymobSignature,
 });

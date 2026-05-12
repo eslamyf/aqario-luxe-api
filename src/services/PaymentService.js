@@ -61,10 +61,16 @@ class PaymentService {
       });
 
       if (existingPayment) {
-        throw new Error(
-          `Payment already initiated for this booking. Status: ${existingPayment.status}. ` +
-          `Cannot create another payment until this one is resolved.`
-        );
+        // In development, we can allow retries by deleting the existing pending payment
+        if (process.env.NODE_ENV === 'development' && existingPayment.status === 'pending') {
+          logger.info(`[Payment] Development mode: Removing existing pending payment for retry.`);
+          await Payment.findByIdAndDelete(existingPayment._id);
+        } else {
+          throw new Error(
+            `Payment already initiated for this booking. Status: ${existingPayment.status}. ` +
+            `Cannot create another payment until this one is resolved.`
+          );
+        }
       }
 
       // 4. Create payment record (status: pending)

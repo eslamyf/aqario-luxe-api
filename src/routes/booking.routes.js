@@ -90,6 +90,46 @@ router.get('/owner', bookingController.getOwnerBookings);
 
 /**
  * @swagger
+ * /bookings/admin/bulk-status:
+ *   patch:
+ *     tags: [📅 Bookings - Admin]
+ *     summary: Bulk update booking statuses
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [bookingIds, status]
+ *             properties:
+ *               bookingIds: { type: array, items: { type: string } }
+ *               status: { type: string, enum: [approved, rejected] }
+ *     responses:
+ *       200:
+ *         description: Bookings updated
+ */
+router.patch('/admin/bulk-status', restrictTo('admin'), checkPermission('bulk_actions'), idempotencyMiddleware, bookingController.bulkUpdateStatus);
+
+/**
+ * @swagger
+ * /bookings/admin/export:
+ *   get:
+ *     tags: [📅 Bookings - Admin]
+ *     summary: Export bookings as CSV
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: CSV file download
+ */
+router.get('/admin/export', restrictTo('admin'), checkPermission('export_data'), bookingController.exportBookings);
+
+/**
+ * @swagger
  * /bookings/{id}:
  *   get:
  *     tags: [📅 Bookings]
@@ -176,7 +216,5 @@ router.patch('/:id/approve', restrictTo('owner','agent','admin'), checkPermissio
  *       404: { $ref: '#/components/responses/404' }
  */
 router.patch('/:id/reject', restrictTo('owner','agent','admin'), checkPermission('reject_booking'), idempotencyMiddleware, bookingController.rejectBooking);
-router.patch('/admin/bulk-status', restrictTo('admin'), checkPermission('bulk_actions'), idempotencyMiddleware, bookingController.bulkUpdateStatus);
-router.get('/admin/export', restrictTo('admin'), checkPermission('export_data'), bookingController.exportBookings);
 
 module.exports = router;

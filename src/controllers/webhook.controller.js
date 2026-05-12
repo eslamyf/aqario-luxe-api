@@ -1,12 +1,12 @@
 'use strict';
 
-const crypto         = require('crypto');
-const asyncHandler   = require('../utils/asyncHandler');
-const AppError       = require('../utils/AppError');
-const Payment        = require('../models/payment.model');
+const crypto = require('crypto');
+const asyncHandler = require('../utils/asyncHandler');
+const AppError = require('../utils/AppError');
+const Payment = require('../models/payment.model');
 const paymentService = require('../services/PaymentService');
-const encryption     = require('../utils/encryption.utils');
-const logger         = require('../utils/logger');
+const encryption = require('../utils/encryption.utils');
+const logger = require('../utils/logger');
 
 // ─── Startup guard: Paymob secret MUST be set ────────────────────────────────
 // Fail at module-load time so a misconfigured deploy fails immediately,
@@ -24,12 +24,12 @@ if (!process.env.PAYMOB_WEBHOOK_SECRET && process.env.NODE_ENV !== 'test') {
 // Signed with PAYPAL_WEBHOOK_ID acting as the shared secret for HMAC-SHA256.
 // See: https://developer.paypal.com/api/rest/webhooks/rest/#link-eventtypesubscriptions
 const verifyPaypalSignature = (req) => {
-  const transmissionId   = req.headers['paypal-transmission-id'];
+  const transmissionId = req.headers['paypal-transmission-id'];
   const transmissionTime = req.headers['paypal-transmission-time'];
-  const certUrl          = req.headers['paypal-cert-url'];
-  const authAlgo         = req.headers['paypal-auth-algo'];
-  const transmissionSig  = req.headers['paypal-transmission-sig'];
-  const webhookId        = process.env.PAYPAL_WEBHOOK_ID;
+  const certUrl = req.headers['paypal-cert-url'];
+  const authAlgo = req.headers['paypal-auth-algo'];
+  const transmissionSig = req.headers['paypal-transmission-sig'];
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
 
   // All headers must be present
   if (!transmissionId || !transmissionTime || !certUrl || !authAlgo || !transmissionSig) {
@@ -50,9 +50,9 @@ const verifyPaypalSignature = (req) => {
   }
 
   // Build the verification string: transmissionId|transmissionTime|webhookId|crc32(body)
-  const rawBody   = JSON.stringify(req.body);          // body already parsed by Express
-  const crc32val  = crc32(rawBody);
-  const message   = `${transmissionId}|${transmissionTime}|${webhookId}|${crc32val}`;
+  const rawBody = JSON.stringify(req.body);          // body already parsed by Express
+  const crc32val = crc32(rawBody);
+  const message = `${transmissionId}|${transmissionTime}|${webhookId}|${crc32val}`;
 
   // Re-compute HMAC using our webhook ID as the key
   const expected = crypto
@@ -96,8 +96,9 @@ exports.handlePaymobWebhook = asyncHandler(async (req, res, next) => {
   const payload = req.body;
   logger.info('[Webhook/Paymob] received', { type: payload.type });
 
-  const signature = req.headers['x-paymob-signature'];
-  const secret    = process.env.PAYMOB_WEBHOOK_SECRET;
+  // Paymob sends the HMAC signature in the query string for Transaction Processed Callbacks
+  const signature = req.query.hmac || req.headers['x-paymob-signature'];
+  const secret = process.env.PAYMOB_WEBHOOK_SECRET;
 
   // HARD FAIL: secret absent at runtime (should have been caught at startup, but
   // guard here too in case someone clears env without restarting).
@@ -106,9 +107,9 @@ exports.handlePaymobWebhook = asyncHandler(async (req, res, next) => {
     return next(new AppError('Webhook secret not configured', 500));
   }
 
-  // HARD FAIL: signature header absent — never process unsigned webhooks
+  // HARD FAIL: signature absent — never process unsigned webhooks
   if (!signature) {
-    logger.warn('[Webhook/Paymob] Missing x-paymob-signature header');
+    logger.warn('[Webhook/Paymob] Missing HMAC signature in query params');
     return next(new AppError('Missing webhook signature', 403));
   }
 
@@ -120,7 +121,7 @@ exports.handlePaymobWebhook = asyncHandler(async (req, res, next) => {
   }
 
   const transaction = payload.obj || payload;
-  const paymentId   = transaction.merchant_order_id;
+  const paymentId = transaction.merchant_order_id;
 
   if (!paymentId) {
     return next(new AppError('Missing payment ID', 400));
@@ -162,8 +163,8 @@ exports.handlePaypalWebhook = asyncHandler(async (req, res, next) => {
     return res.status(200).json({ status: 'success', message: 'Event acknowledged' });
   }
 
-  const resource  = payload.resource || {};
-  const customId  = resource.custom_id || resource.purchase_units?.[0]?.custom_id;
+  const resource = payload.resource || {};
+  const customId = resource.custom_id || resource.purchase_units?.[0]?.custom_id;
 
   if (!customId) return next(new AppError('Missing custom_id', 400));
 

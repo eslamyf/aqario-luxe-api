@@ -13,7 +13,7 @@ const postJson = async (url, body, headers = {}) => {
   let data = text;
   try {
     data = text ? JSON.parse(text) : null;
-  } catch (_) {}
+  } catch (_) { }
 
   if (!res.ok) {
     const err = new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -34,7 +34,7 @@ const postJson = async (url, body, headers = {}) => {
 class PaymobProvider extends BaseProvider {
   constructor() {
     super('Paymob');
-    this.apiUrl = 'https://api.paymob.com/api';
+    this.apiUrl = 'https://accept.paymob.com/api';
     this.apiKey = process.env.PAYMOB_API_KEY;
     this.iframeId = process.env.PAYMOB_IFRAME_ID;
     this.integrationId = process.env.PAYMOB_INTEGRATION_ID;
@@ -56,6 +56,25 @@ class PaymobProvider extends BaseProvider {
       const { amount, paymentId, userId, propertyName, currency } = data;
 
       logger.info(`[Paymob] Creating payment: ${paymentId}, amount: ${amount}`);
+
+      // MOCK for local development without real API keys
+      if (this.apiKey === 'dummy_api_key') {
+        logger.info(`[Paymob] Using dummy API key, returning mock checkout URL.`);
+
+        // Auto-approve the booking payment for local testing
+        const Booking = require('../../models/booking.model');
+        await Booking.findByIdAndUpdate(data.bookingId, { paymentStatus: 'paid', paidAmount: amount });
+
+        return {
+          paymentKey: 'mock_payment_key_123',
+          iframeKey: 'mock_payment_key_123',
+          paymentUrl: `${process.env.CLIENT_URL || 'http://localhost:4200'}/payment/success?bookingId=${data.bookingId}`,
+          metadata: {
+            orderId: 'mock_order_123',
+            integrationId: this.integrationId,
+          },
+        };
+      }
 
       // Step 1: Get authentication token
       const authToken = await this.getAuthToken();
@@ -100,6 +119,7 @@ class PaymobProvider extends BaseProvider {
           floor: 'NA',
           first_name: 'Customer',
           street: 'NA',
+          building: 'NA',
           postal_code: 'NA',
           city: 'NA',
           country: 'NA',

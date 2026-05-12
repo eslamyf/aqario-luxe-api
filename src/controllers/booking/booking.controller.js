@@ -48,6 +48,7 @@ exports.createBooking = async (req, res, next) => {
       amount,
       start_date:  parsedStart,
       end_date:    parsedEnd,
+      status:      'approved' // Instant booking bypasses approval
     });
 
     // Notify property owner
