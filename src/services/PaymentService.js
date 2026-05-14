@@ -46,10 +46,10 @@ class PaymentService {
         throw new Error('Invalid property price');
       }
 
-      // Platform fee: 2.5% of property price
-      const platformFee = Math.round(propertyPrice * 0.025 * 100) / 100;
+      // Platform service fee: 5% of property price (Production Requirement)
+      const platformFee = Math.round(propertyPrice * 0.05 * 100) / 100;
       const totalAmount = propertyPrice + platformFee;
-      const netAmount = propertyPrice; // Owner receives only property price (no fee)
+      const netAmount = propertyPrice; // Owner receives the property price, platform takes the fee
 
       logger.info(`[Payment] Amount breakdown - Price: ${propertyPrice}, Fee: ${platformFee}, Total: ${totalAmount}`);
 
@@ -372,6 +372,79 @@ class PaymentService {
       return payment;
     } catch (err) {
       logger.error('[Payment] refundPayment error:', err);
+      throw err;
+    }
+  }
+  /**
+   * PHASE 3: Initiate Promotion Payment
+   * 
+   * Monetization for:
+   * - Featured Listing ($49.99 / EGP 1500)
+   * - Boost Listing ($24.99 / EGP 750)
+   * - Premium Badge ($14.99 / EGP 400)
+   */
+  async initiatePromotion(propertyId, type, paymentMethod, userId) {
+    try {
+      logger.info(`[Payment] Initiating promotion ${type} for property ${propertyId}`);
+
+      const Property = require('../models/property.model');
+      const property = await Property.findById(propertyId);
+      if (!property) throw new Error('Property not found');
+
+      // Define pricing
+      const prices = {
+        featured: { USD: 49.99, EGP: 1500 },
+        boost:    { USD: 24.99, EGP: 750  },
+        badge:    { USD: 14.99, EGP: 400  },
+      };
+
+      const promotionPrice = prices[type];
+      if (!promotionPrice) throw new Error('Invalid promotion type');
+
+      // Determine currency based on provider
+      const currency = paymentMethod === 'paymob' ? 'EGP' : 'USD';
+      const amount = promotionPrice[currency];
+
+      // Service fee (5%) added to promotion price as well
+      const serviceFee = Math.round(amount * 0.05 * 100) / 100;
+      const totalAmount = amount + serviceFee;
+
+      const PromotionTransaction = require('../models/promotionTransaction.model');
+      const transaction = new PromotionTransaction({
+        user: userId,
+        property: propertyId,
+        type,
+        amount,
+        currency,
+        provider: paymentMethod,
+        status: 'pending',
+        metadata: { serviceFee, totalAmount }
+      });
+
+      await transaction.save();
+
+      // Route to provider
+      const provider = ProviderFactory.getProvider(paymentMethod);
+      const providerResult = await provider.createPayment({
+        amount: totalAmount,
+        paymentId: transaction._id.toString(),
+        userId,
+        propertyId,
+        propertyName: `Promotion: ${type} - ${property.title}`,
+        currency,
+      });
+
+      transaction.transactionId = providerResult.paymentKey;
+      await transaction.save();
+
+      return {
+        paymentId: transaction._id,
+        paymentUrl: providerResult.paymentUrl,
+        totalAmount,
+        currency
+      };
+    } catch (err) {
+      logger.error('[Payment] initiatePromotion error:', err);
       throw err;
     }
   }

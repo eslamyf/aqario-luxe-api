@@ -178,4 +178,35 @@ exports.verifyByBooking = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/v1/payments/promotion
+ * Initiate payment for property promotion
+ */
+exports.initiatePromotion = async (req, res, next) => {
+  try {
+    const { propertyId, type, paymentMethod } = req.body;
+
+    if (!propertyId || !type || !paymentMethod) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'propertyId, type, and paymentMethod are required',
+      });
+    }
+
+    const result = await paymentService.initiatePromotion(
+      propertyId,
+      type,
+      paymentMethod,
+      req.user._id
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = exports;

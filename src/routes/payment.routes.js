@@ -46,6 +46,12 @@ router.post(
   paymentController.initiatePayment
 );
 
+router.post(
+  '/promotion-checkout',
+  protect,
+  paymentController.initiatePromotion
+);
+
 // Helper for local development: Redirect Paymob response to local frontend
 // Must be BEFORE /:id route to avoid being caught by it!
 router.get('/success', (req, res) => {

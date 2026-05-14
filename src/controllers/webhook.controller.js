@@ -128,16 +128,32 @@ exports.handlePaymobWebhook = asyncHandler(async (req, res, next) => {
     return next(new AppError('Missing payment ID', 400));
   }
 
-  const payment = await Payment.findById(paymentId);
-  if (!payment) return next(new AppError('Payment not found', 404));
+  const PromotionTransaction = require('../models/promotionTransaction.model');
+  const promotionService = require('../services/PromotionService');
 
-  // Idempotency: already processed — return 200 without re-crediting
-  if (payment.isVerified) {
-    logger.info(`[Webhook/Paymob] Already verified (idempotent): ${paymentId}`);
-    return res.status(200).json({ status: 'success', message: 'Payment already verified', duplicate: true });
+  let payment = await Payment.findById(paymentId);
+  let isPromotion = false;
+
+  if (!payment) {
+    payment = await PromotionTransaction.findById(paymentId);
+    isPromotion = true;
   }
 
-  const result = await paymentService.verifyPayment(paymentId, transaction);
+  if (!payment) return next(new AppError('Transaction not found', 404));
+
+  // Idempotency: already processed
+  if (payment.status === 'paid' || payment.isVerified) {
+    logger.info(`[Webhook/Paymob] Already processed (idempotent): ${paymentId}`);
+    return res.status(200).json({ status: 'success', message: 'Payment already processed' });
+  }
+
+  let result;
+  if (isPromotion) {
+    result = await promotionService.activatePromotion(paymentId);
+  } else {
+    result = await paymentService.verifyPayment(paymentId, transaction);
+  }
+
   res.status(200).json({ status: 'success', message: 'Webhook processed', data: result });
 });
 
@@ -169,16 +185,32 @@ exports.handlePaypalWebhook = asyncHandler(async (req, res, next) => {
 
   if (!customId) return next(new AppError('Missing custom_id', 400));
 
-  const payment = await Payment.findById(customId);
-  if (!payment) return next(new AppError('Payment not found', 404));
+  const PromotionTransaction = require('../models/promotionTransaction.model');
+  const promotionService = require('../services/PromotionService');
 
-  // Idempotency guard
-  if (payment.isVerified) {
-    logger.info(`[Webhook/PayPal] Already verified (idempotent): ${customId}`);
-    return res.status(200).json({ status: 'success', message: 'Payment already verified', duplicate: true });
+  let payment = await Payment.findById(customId);
+  let isPromotion = false;
+
+  if (!payment) {
+    payment = await PromotionTransaction.findById(customId);
+    isPromotion = true;
   }
 
-  const result = await paymentService.verifyPayment(customId, payload);
+  if (!payment) return next(new AppError('Transaction not found', 404));
+
+  // Idempotency guard
+  if (payment.status === 'paid' || payment.isVerified) {
+    logger.info(`[Webhook/PayPal] Already processed (idempotent): ${customId}`);
+    return res.status(200).json({ status: 'success', message: 'Payment already processed' });
+  }
+
+  let result;
+  if (isPromotion) {
+    result = await promotionService.activatePromotion(customId);
+  } else {
+    result = await paymentService.verifyPayment(customId, payload);
+  }
+
   res.status(200).json({ status: 'success', message: 'Webhook processed', data: result });
 });
 

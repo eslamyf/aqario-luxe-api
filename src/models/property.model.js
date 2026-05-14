@@ -70,7 +70,15 @@ const propertySchema = new mongoose.Schema(
       set: (val) => Math.round(val * 10) / 10,
     },
     reviewCount: { type: Number, default: 0 },
-    isApproved:  { type: Boolean, default: false }, // العقار يحتاج موافقة الأدمن قبل النشر
+    isApproved:  { type: Boolean, default: false }, // Property needs admin approval before publishing
+    promotion: {
+      isFeatured: { type: Boolean, default: false },
+      featuredUntil: { type: Date },
+      isBoosted: { type: Boolean, default: false },
+      boostedUntil: { type: Date },
+      hasPremiumBadge: { type: Boolean, default: false },
+    },
+    promotionScore: { type: Number, default: 0, index: true }, // For ranking algorithm
   },
   {
     timestamps: true,
@@ -87,7 +95,8 @@ propertySchema.index({ listingType: 1 });
 propertySchema.index({ 'location.city': 1 });
 propertySchema.index({ owner: 1 });
 propertySchema.index({ status: 1 });
-propertySchema.index({ isApproved: 1, status: 1 });
+propertySchema.index({ isApproved: 1, status: 1, promotionScore: -1 });
+propertySchema.index({ promotionScore: -1, createdAt: -1 });
 propertySchema.index({ owner: 1, createdAt: -1 });
 
 // Compound indexes for optimized filtering

@@ -59,10 +59,14 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
     if (rawQuery.maxPrice) { rawQuery.price.$lte = Number(rawQuery.maxPrice); delete rawQuery.maxPrice; }
   }
 
+  // ── Ranking System: Sort by promotionScore (Featured > Boosted > Normal) ─────────
+  // Default sort: promotionScore DESC, createdAt DESC
+  const sort = req.query.sort || '-promotionScore,-createdAt';
+
   const features = new APIFeatures(Property.find({ isApproved: true }), rawQuery)
     .filter()
     .search()
-    .sort()
+    .sort(sort)
     .limitFields()
     .paginate();
 
