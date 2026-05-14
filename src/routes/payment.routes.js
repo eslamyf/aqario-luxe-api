@@ -5,6 +5,7 @@ const webhookController = require('../controllers/webhook.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
 const { requireKYC } = require('../middlewares/kyc.middleware');
+const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 
 // ─────────────────────────────────────────────────────────────────
 // USER ENDPOINTS (protected + KYC required)
@@ -41,6 +42,7 @@ router.post(
   '/checkout',
   protect,
   requireKYC,
+  idempotencyMiddleware,
   paymentController.initiatePayment
 );
 
@@ -70,6 +72,28 @@ router.get('/success', (req, res) => {
  *       404:
  *         description: Payment not found
  */
+// BUG-07 FIX: GET /verify/:bookingId — MUST be registered BEFORE /:id wildcard
+// Angular's payment-success.component.ts polls this endpoint to confirm payment status.
+// Previously missing — caused permanent "Confirming Payment..." spinner (404 loop).
+router.get('/verify/:bookingId', protect, paymentController.verifyByBooking);
+
+// BUG-06 FIX: Moved WEBHOOK ENDPOINTS above /:id wildcard to prevent routing conflicts
+
+// ─────────────────────────────────────────────────────────────────
+// WEBHOOK ENDPOINTS (no auth required, signature-verified)
+// ─────────────────────────────────────────────────────────────────
+router.post('/webhook/paymob', webhookController.handlePaymobWebhook);
+router.get('/webhook/paymob', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Paymob Webhook endpoint is active and listening for POST requests!'
+  });
+});
+router.post('/webhook/paypal', webhookController.handlePaypalWebhook);
+
+// ─────────────────────────────────────────────────────────────────
+// DYNAMIC ROUTES (must be after specific routes)
+// ─────────────────────────────────────────────────────────────────
 router.get('/:id', protect, paymentController.getPaymentStatus);
 
 /**
@@ -150,52 +174,5 @@ router.post(
   restrictTo('admin'),
   paymentController.refundPayment
 );
-
-// ─────────────────────────────────────────────────────────────────
-// WEBHOOK ENDPOINTS (no auth required, signature-verified)
-// ─────────────────────────────────────────────────────────────────
-
-/**
- * @swagger
- * /webhook/paymob:
- *   post:
- *     tags: [🔗 Webhooks]
- *     summary: Paymob payment callback
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               type: { type: string }
- *               obj: { type: object }
- *     responses:
- *       200:
- *         description: Webhook processed
- *       403:
- *         description: Invalid signature
- */
-router.post('/webhook/paymob', webhookController.handlePaymobWebhook);
-
-// Allow GET requests for easy browser verification and Paymob dashboard validation
-router.get('/webhook/paymob', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Paymob Webhook endpoint is active and listening for POST requests!'
-  });
-});
-
-/**
- * @swagger
- * /webhook/paypal:
- *   post:
- *     tags: [🔗 Webhooks]
- *     summary: PayPal payment callback
- *     responses:
- *       200:
- *         description: Webhook processed
- */
-router.post('/webhook/paypal', webhookController.handlePaypalWebhook);
 
 module.exports = router;

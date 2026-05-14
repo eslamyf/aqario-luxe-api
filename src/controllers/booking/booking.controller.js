@@ -7,7 +7,10 @@ const logger = require('../../utils/logger');
 // ─── Create Booking ──────────────────────────────────────────
 exports.createBooking = async (req, res, next) => {
   try {
-    const { propertyId, amount, start_date, end_date } = req.body;
+    // BUG-12 FIX: `amount` is NO LONGER accepted from req.body.
+    // The booking amount is derived server-side from property.price to prevent
+    // a client from submitting amount=1 for a $500,000 property.
+    const { propertyId, start_date, end_date } = req.body;
 
     const parsedStart = new Date(start_date);
     const parsedEnd   = new Date(end_date);
@@ -45,10 +48,10 @@ exports.createBooking = async (req, res, next) => {
     const booking = await Booking.create({
       user_id:     req.user._id,
       property_id: propertyId,
-      amount,
+      amount:      property.price, // BUG-12 FIX: Always use server-side price, never req.body.amount
       start_date:  parsedStart,
       end_date:    parsedEnd,
-      status:      'approved' // Instant booking bypasses approval
+      status:      'pending' // BUG-04 FIX: Owner must approve before payment can proceed
     });
 
     // Notify property owner
@@ -87,6 +90,10 @@ exports.cancelBooking = async (req, res, next) => {
     // FIX — استخدام status بدل applied
     if (booking.status === 'approved') {
       return res.status(400).json({ status: 'fail', message: req.t('BOOKING.CANNOT_CANCEL_APPROVED') });
+    }
+    // Additional Finding C FIX: Block cancellation of already-paid bookings regardless of status
+    if (booking.paymentStatus === 'paid') {
+      return res.status(400).json({ status: 'fail', message: req.t('BOOKING.CANNOT_CANCEL_PAID') });
     }
     if (booking.status === 'cancelled' || booking.status === 'rejected') {
       return res.status(400).json({ status: 'fail', message: req.t('BOOKING.ALREADY_PROCESSED') });

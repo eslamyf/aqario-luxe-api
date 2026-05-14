@@ -6,24 +6,38 @@ const logger = require('../utils/logger');
 // FIX #19 — Automatically convert completed bookings to 'completed' status
 // So users can write reviews for properties they actually used
 
-const initBookingJob = () => {
+const initBookingJob = (io) => {
   // Run every hour at minute 0
   cron.schedule('0 * * * *', async () => {
     try {
       const now = new Date();
 
       // Find all approved bookings where end_date has passed
-      const completed = await Booking.updateMany(
-        {
-          status: 'approved',
-          end_date: { $lt: now },
-        },
-        { $set: { status: 'completed' } }
-      );
+      const bookings = await Booking.find({
+        status: 'approved',
+        end_date: { $lt: now },
+      }).populate('property_id');
 
-      if (completed.modifiedCount > 0) {
-        logger.info(`[BookingJob] Marked ${completed.modifiedCount} booking(s) as completed`);
+      if (bookings.length === 0) return;
+
+      const { createNotification } = require('../utils/notificationHelper');
+
+      for (const booking of bookings) {
+        booking.status = 'completed';
+        await booking.save();
+
+        if (io) {
+          // Notify user to leave a review
+          await createNotification(io, booking.user_id, {
+            type: 'review_reminder',
+            title: 'How was your stay?',
+            message: `Please leave a review for ${booking.property_id?.title || 'your recent stay'}.`,
+            link: `/properties/${booking.property_id?._id}`
+          });
+        }
       }
+
+      logger.info(`[BookingJob] Marked ${bookings.length} booking(s) as completed`);
     } catch (err) {
       logger.error(`[BookingJob] Error: ${err.message}`);
     }

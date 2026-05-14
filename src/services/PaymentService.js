@@ -3,7 +3,7 @@ const Booking = require('../models/booking.model');
 const Property = require('../models/property.model');
 const User = require('../models/user.model');
 const ProviderFactory = require('./providers/factory');
-const AppError = require('../utils/appError');
+const AppError = require('../utils/AppError');
 const logger = require('../utils/logger');
 const mongoose = require('mongoose');
 
@@ -61,16 +61,32 @@ class PaymentService {
       });
 
       if (existingPayment) {
-        // In development, we can allow retries by deleting the existing pending payment
-        if (process.env.NODE_ENV === 'development' && existingPayment.status === 'pending') {
-          logger.info(`[Payment] Development mode: Removing existing pending payment for retry.`);
-          await Payment.findByIdAndDelete(existingPayment._id);
-        } else {
-          throw new Error(
-            `Payment already initiated for this booking. Status: ${existingPayment.status}. ` +
-            `Cannot create another payment until this one is resolved.`
-          );
+        // BUG-10 FIX: Idempotent retry — return existing pending payment instead of
+        // deleting it. The previous dev-mode bypass (`NODE_ENV=development` + delete)
+        // was a financial vulnerability: it allowed any dev-flagged server to silently
+        // destroy in-flight payments. Now we surface the existing record so the client
+        // can redirect the user back to the payment gateway to complete the flow.
+        if (existingPayment.status === 'pending') {
+          logger.info(`[Payment] Idempotent resume: existing pending payment ${existingPayment._id} returned for booking ${bookingId}`);
+          return {
+            paymentId: existingPayment._id,
+            status: 'pending',
+            propertyPrice: existingPayment.propertyPrice,
+            platformFee: existingPayment.platformFee,
+            totalAmount: existingPayment.totalAmount,
+            netAmount: existingPayment.netAmount,
+            paymentMethod: existingPayment.paymentMethod,
+            expiresAt: existingPayment.expiresAt,
+            paymentKey: existingPayment.paymentKey || null,
+            paymentUrl: existingPayment.metadata?.iframeUrl || null,
+            resumed: true, // signal to controller that this was a resumed session
+          };
         }
+        // Non-pending (processing, paid, failed, expired): hard reject
+        throw new Error(
+          `Payment already initiated for this booking. Status: ${existingPayment.status}. ` +
+          `Cannot create another payment until this one is resolved.`
+        );
       }
 
       // 4. Create payment record (status: pending)
@@ -104,7 +120,7 @@ class PaymentService {
           userId: userId,
           propertyId: property._id.toString(),
           bookingId: bookingId,
-          propertyName: property.name || 'Property',
+          propertyName: property.title || 'Property', // BUG-15 FIX: Property model uses `title`, not `name`
           currency: payment.currency,
         });
       } catch (providerErr) {
@@ -257,7 +273,7 @@ class PaymentService {
 
       const payment = await Payment.findOne(query)
         .populate('user', 'name email')
-        .populate('property', 'name price')
+        .populate('property', 'title price') // BUG-15 FIX (Extra-D): Property model uses `title`, not `name`
         .populate('booking', '_id amount');
 
       if (!payment) {

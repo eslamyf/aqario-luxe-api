@@ -10,7 +10,7 @@ exports.createPayment = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { bookingId, amount, method } = req.body;
+    const { bookingId, method } = req.body;
 
     const booking = await Booking.findById(bookingId).session(session);
     if (!booking) {
@@ -25,7 +25,7 @@ exports.createPayment = async (req, res, next) => {
 
     if (booking.status !== 'approved') {
       await session.abortTransaction();
-      return res.status(400).json({ status: 'fail', message: req.t('COMMON.VALIDATION_DATA_ERROR') }); // Reusing generic for "must be approved" as it fits, or add a specific one. Actually, "Booking must be approved before payment" doesn't have an exact mapping, but let's see. I'll use VALIDATION_DATA_ERROR or similar. Wait, I will use a custom if missing, but let's stick to existing: BOOKING_NOT_FOUND, etc. Let's add it to locales if needed, but for now I'll just use the closest. Or better, I can just use raw string if missing, but I want 100% i18n. Let me check the translation.json I generated. I have "PAYMENT.NOT_FOUND", "PAYMENT.ALREADY_VERIFIED", "PAYMENT.FAILED", "PAYMENT.DOUBLE_PAYMENT", etc. I will use 'PAYMENT.DOUBLE_PAYMENT' for already paid, etc.
+      return res.status(400).json({ status: 'fail', message: req.t('BOOKING.MUST_BE_APPROVED') });
     }
 
     // FIX — Use PAYMENT_STATUS.PAID constant instead of hardcoded 'paid'
@@ -41,7 +41,7 @@ exports.createPayment = async (req, res, next) => {
         property:      booking.property_id,
         booking:       bookingId,
         propertyPrice: booking.amount,
-        totalAmount:   amount || booking.amount,
+        totalAmount:   booking.amount,
         paymentMethod: method || 'cash',
         transactionId: uuidv4(),
         status:        'pending',

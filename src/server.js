@@ -85,6 +85,14 @@ if (!CLIENT_URL) {
   throw new Error('CLIENT_URL is required in .env');
 }
 
+// ── BUG-03 FIX: Multi-origin CORS ─────────────────────────────
+// ALLOWED_ORIGINS is a comma-separated list in .env.
+// Falls back to CLIENT_URL for single-origin setups.
+// Example: ALLOWED_ORIGINS=http://localhost:4200,https://luxe-estates.vercel.app
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+  : [CLIENT_URL];
+
 // ── App Setup ──────────────────────────────────────────────
 const app = express();
 const server = http.createServer(app);
@@ -92,10 +100,15 @@ const io = initSocket(server);
 
 // ── CORS FIRST — Before all other middleware ──────────────────
 app.use(cors({
-  origin: CLIENT_URL,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (curl, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: Origin '${origin}' not in ALLOWED_ORIGINS`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'Idempotency-Key'],
   exposedHeaders: ['X-Request-Id'],
 }));
 
@@ -132,7 +145,7 @@ app.use(i18nMiddleware.handle(i18next));
 // Rate limiting (disabled in tests to allow fast test execution without lockouts)
 if (process.env.NODE_ENV !== 'test') {
   app.use('/api', globalLimiter);
-  // app.use('/api/v1/auth', authLimiter); // Temporarily disabled for Google login testing
+  app.use('/api/v1/auth', authLimiter); // BUG-02 FIX: Re-enabled — was disabled during Google login testing
 }
 
 // Cookie parsing (must be before routes that use cookies)
@@ -213,7 +226,7 @@ const startServer = async () => {
     logger.info(`  Health: http://localhost:${PORT}/api/health`);
     initAuctionJob(io);
     initSavedSearchJob(io);
-    initBookingJob();
+    initBookingJob(io); // Additional Finding B FIX: Pass io to booking job
     initPaymentExpiryJob();
     initSubscriptionExpiryJob();
     initKycCleanupJob();

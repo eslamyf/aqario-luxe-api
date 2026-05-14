@@ -140,4 +140,42 @@ exports.verifyPayment = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/v1/payments/verify/:bookingId
+ * BUG-07 FIX: Poll payment status by bookingId — used by payment-success.component.ts
+ * The Angular frontend polls this endpoint after redirect from Paymob to confirm payment.
+ * Without this endpoint, users were stuck on "Confirming Payment..." indefinitely (404 loop).
+ */
+exports.verifyByBooking = async (req, res, next) => {
+  try {
+    const Payment = require('../models/payment.model');
+
+    const payment = await Payment.findOne({
+      booking: req.params.bookingId,
+      user:    req.user._id,
+    }).sort({ createdAt: -1 }); // Get the most recent payment for this booking
+
+    if (!payment) {
+      return res.status(404).json({
+        status:  'fail',
+        message: req.t('PAYMENT.NOT_FOUND'),
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        paid:          payment.status === 'paid',
+        paymentStatus: payment.status,
+        verified:      payment.isVerified,
+        transactionId: payment.transactionId || null,
+        provider:      payment.provider || payment.paymentMethod,
+        expiresAt:     payment.expiresAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = exports;

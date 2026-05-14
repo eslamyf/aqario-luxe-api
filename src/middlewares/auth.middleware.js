@@ -63,7 +63,7 @@ exports.restrictTo = (...roles) => {
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         status: 'fail',
-        message: 'You do not have permission to perform this action'
+        message: req.t('COMMON.NOT_AUTHORIZED')
       });
     }
     next();

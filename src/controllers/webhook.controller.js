@@ -44,8 +44,9 @@ const verifyPaypalSignature = (req) => {
 
   // Only support HMAC-SHA256 (PayPal may send SHA256withRSA for live, but we
   // enforce the simpler HMAC path here; RSA path requires fetching PayPal's cert).
-  if (authAlgo.toUpperCase() !== 'HMACSHA256' && authAlgo.toUpperCase() !== 'SHA256WITHRSA') {
-    logger.warn(`[Webhook/PayPal] Unsupported auth algorithm: ${authAlgo}`);
+  // BUG-09 FIX: Explicitly reject SHA256WITHRSA so it doesn't fall through to the HMAC path.
+  if (authAlgo.toUpperCase() !== 'HMACSHA256') {
+    logger.warn(`[Webhook/PayPal] Unsupported auth algorithm: ${authAlgo}. RSA verification path not implemented.`);
     return false;
   }
 

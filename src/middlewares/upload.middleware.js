@@ -5,7 +5,7 @@ const AppError = require('../utils/AppError');
 
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.jfif', '.pjpeg', '.pjp'];
 const ALLOWED_DOC_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.jfif', '.pdf', '.doc', '.docx'];
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // Increased to 10MB as requested
 
 const storage = multer.memoryStorage();
 const fileFilter = (_req, file, cb) => {
@@ -47,11 +47,11 @@ const logger = require('../utils/logger'); // Import logger
 const uploadToCloudinary = (buffer, folder = 'real-estate') =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: 'image', quality: 'auto', fetch_format: 'auto' },
+      { folder, resource_type: 'auto', quality: 'auto', fetch_format: 'auto' },
       (error, result) => {
         if (error) {
           logger.error(`❌ Cloudinary Upload Failed: ${error.message || JSON.stringify(error)}`);
-          return reject(new AppError('Failed to upload image to Cloudinary', 500));
+          return reject(new AppError(`Failed to upload image to Cloudinary: ${error.message || 'Unknown error'}`, 500));
         }
         resolve(result.secure_url);
       }
