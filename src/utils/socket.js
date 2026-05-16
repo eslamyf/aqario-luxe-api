@@ -1,18 +1,18 @@
 let _io = null;
 
 /**
- * تخزين instance الـ socket.io
+ * Store socket.io instance
  */
 exports.init = (io) => {
   _io = io;
 };
 
 /**
- * استرجاع instance الـ socket.io
+ * Get socket.io instance
  */
 exports.getIO = () => {
   if (!_io) {
-    throw new Error('Socket.io لم يتم تهيئته بعد');
+    throw new Error('Socket.io has not been initialized yet');
   }
   return _io;
 };

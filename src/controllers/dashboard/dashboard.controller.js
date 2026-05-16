@@ -784,7 +784,7 @@ exports.ownerProperties = async (req, res, next) => {
 // FIX #8 — Add missing const { page, limit, skip }
 exports.ownerBookings = async (req, res, next) => {
   try {
-    const { page, limit, skip } = res.locals.pagination; // FIX — كانت مستخدمة بدون تعريف
+    const { page, limit, skip } = res.locals.pagination; // FIX — Was used without definition
     const myProperties = await Property.find({ owner: req.user._id }).select('_id');
     const propertyIds  = myProperties.map((p) => p._id);
 

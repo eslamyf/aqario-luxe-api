@@ -5,36 +5,28 @@ const path       = require('path');
 
 i18next
   .use(Backend)
-  .use(middleware.LanguageDetector)
   .init({
-    // ── Supported languages ────────────────────────────────
-    supportedLngs: ['en', 'ar'],
+    // ── Fixed to English only ──────────────────────────────
+    lng:           'en',
     fallbackLng:   'en',
-    preload:       ['en', 'ar'],
+    preload:       ['en'],
 
     // ── Namespace ──────────────────────────────────────────
     ns:        ['translation'],
     defaultNS: 'translation',
 
-    // ── Backend: load JSON from disk (cached after first load) ─
+    // ── Backend: load JSON from disk ───────────────────────
     backend: {
       loadPath: path.join(__dirname, '..', 'locales', '{{lng}}', '{{ns}}.json'),
     },
 
-    // ── Language detection (Accept-Language header only) ───
-    detection: {
-      order:  ['header'],          // Only Accept-Language header
-      lookupHeader: 'accept-language',
-      caches: false,               // Don't persist — stateless API
-    },
-
     // ── Interpolation ──────────────────────────────────────
     interpolation: {
-      escapeValue: true,           // Prevent XSS in translated content
+      escapeValue: true,           // Prevent XSS
     },
 
     // ── Misc ───────────────────────────────────────────────
-    cleanCode: true,               // 'en-US' → 'en'
+    cleanCode: true,
     debug:     false,
   });
 

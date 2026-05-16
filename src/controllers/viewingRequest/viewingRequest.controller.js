@@ -76,7 +76,7 @@ exports.updateStatus = async (req, res, next) => {
       return res.status(400).json({ status: 'fail', message: req.t('VIEWING.STATUS_INVALID') });
     }
 
-    const viewingRequest = await ViewingRequest.findById(req.params.id).lean()
+    const viewingRequest = await ViewingRequest.findById(req.params.id)
       .populate('requester', 'email name').populate('property', 'title');
     if (!viewingRequest) return res.status(404).json({ status: 'fail', message: req.t('VIEWING.NOT_FOUND') });
     if (viewingRequest.owner.toString() !== req.user._id.toString()) {
@@ -101,7 +101,7 @@ exports.updateStatus = async (req, res, next) => {
       link:    `/viewing-requests/${viewingRequest._id}`,
     }).catch(() => {});
 
-    // إيميل للطالب
+    // Email to requester
     if (viewingRequest.requester?.email) {
       await sendViewingResponseEmail(viewingRequest.requester.email, {
         status,

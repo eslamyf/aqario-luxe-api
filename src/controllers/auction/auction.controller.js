@@ -226,7 +226,7 @@ exports.getMyAuctions = asyncHandler(async (req, res) => {
     .populate('winner',   'name email')
     .sort({ createdAt: -1 });
 
-  // FIX — استخدام aggregation واحدة بدل N+1 queries
+  // FIX — Use one aggregation instead of N+1 queries
   const auctionIds = auctions.map((a) => a._id);
   const bidCounts  = await Bid.aggregate([
     { $match: { auction: { $in: auctionIds } } },
@@ -247,13 +247,13 @@ exports.getMyAuctions = asyncHandler(async (req, res) => {
 exports.approveAuction = asyncHandler(async (req, res, next) => {
   const auction = await Auction.findByIdAndUpdate(
     req.params.id,
-    { isApproved: true }, // FIX — حذف status: 'active' من هنا
+    { isApproved: true }, // FIX — Remove status: 'active' from here
     { new: true }
   ).populate('property', 'title location images price');
 
   if (!auction) return next(new AppError(req.t('AUCTION.NOT_FOUND'), 404));
 
-  // إشعار صاحب المزاد
+  // Notify auction owner
   await createNotification(req.io, auction.seller, {
     type:    'auction',
     title:   req.t('NOTIFICATION.AUCTION_APPROVED_TITLE'),

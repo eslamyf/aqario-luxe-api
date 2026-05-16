@@ -34,7 +34,7 @@ exports.createBooking = async (req, res, next) => {
       return res.status(400).json({ status: 'fail', message: req.t('PROPERTY.FOR_SALE_ONLY') });
     }
 
-    // التحقق من عدم وجود تعارض في التواريخ
+    // Check for date conflicts
     const conflict = await Booking.findOne({
       property_id: propertyId,
       status:      { $in: ['pending', 'approved'] },
@@ -87,7 +87,7 @@ exports.cancelBooking = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({ status: 'fail', message: req.t('BOOKING.NOT_FOUND') });
     }
-    // FIX — استخدام status بدل applied
+    // Use status instead of applied
     if (booking.status === 'approved') {
       return res.status(400).json({ status: 'fail', message: req.t('BOOKING.CANNOT_CANCEL_APPROVED') });
     }
@@ -151,7 +151,7 @@ exports.approveBooking = async (req, res, next) => {
         amount:        booking.amount,
       });
 
-      // إشعار المستخدم
+      // Notify user
       await createNotification(req.io, booking.user_id._id || booking.user_id, {
         type:    'booking',
         title:   req.t('NOTIFICATION.BOOKING_APPROVED'),
@@ -175,7 +175,7 @@ exports.rejectBooking = async (req, res, next) => {
     const { rejectBookingService } = require('../../services/booking.service');
     const booking = await rejectBookingService(req.params.id, req.user._id, req.user.role);
 
-    // إشعار المستخدم
+    // Notify user
     try {
       await createNotification(req.io, booking.user_id, {
         type:    'booking',
