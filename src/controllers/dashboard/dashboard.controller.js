@@ -5,9 +5,7 @@ const Booking   = require('../../models/booking.model');
 const Payment   = require('../../models/payment.model');
 const Favorite  = require('../../models/favorite.model');
 const Inquiry   = require('../../models/inquiry.model');
-const Auction   = require('../../models/auction.model');
 const Review    = require('../../models/review.model');
-const Bid       = require('../../models/bid.model');
 const Subscription = require('../../models/subscription.model');
 const { PAYMENT_STATUS, SUBSCRIPTION_STATUS } = require('../../utils/constants');
 const { logAction, getAuditLogs } = require('../../services/audit.service');
@@ -558,29 +556,6 @@ exports.rejectProperty = async (req, res, next) => {
   }
 };
 
-// @route PATCH /api/v1/dashboard/admin/auctions/:id/approve
-exports.approveAuction = async (req, res, next) => {
-  try {
-    const auction = req.guardedResource ? await Auction.findById(req.params.id) : await Auction.findById(req.params.id);
-    if (!auction) return res.status(404).json({ status: 'fail', message: req.t('DASHBOARD.AUCTION_NOT_FOUND') });
-
-    const wasApproved = auction.isApproved;
-    auction.isApproved = true;
-    // Cron job handles status transition — do not set status here
-    await auction.save();
-
-    // ── Audit Trail ──────────────────────────────────────────────
-    await logAction(
-      req.user._id, 'APPROVE_AUCTION', 'Auction', auction._id,
-      { before: { isApproved: wasApproved }, after: { isApproved: true } },
-      { ip: req.ip, userAgent: req.headers['user-agent'] }
-    );
-
-    res.status(200).json({ status: 'success', message: req.t('DASHBOARD.AUCTION_APPROVED'), data: { auction } });
-  } catch (err) {
-    next(err);
-  }
-};
 
 // @route GET /api/v1/dashboard/admin/reports/revenue
 // FIX — Add year to group to differentiate between different years

@@ -94,19 +94,31 @@ exports.sendBookingConfirmationEmail = async (email, { propertyTitle, startDate,
   });
 };
 
-// ─── Auction Winner ───────────────────────────────
-exports.sendAuctionWinnerEmail = async (email, { propertyTitle, finalBid }) => {
+// ─── Viewing Approved — You Can Now Book ──────────────────
+exports.sendViewingApprovedBookingEmail = async (email, { propertyTitle, preferredDate, preferredTime, status }) => {
+  const isCompleted = status === 'completed';
   await sendEmail({
     to: email,
-    subject: 'Auction Winner 🏆',
+    subject: '✅ You Can Now Reserve This Property',
     html: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #eee;border-radius:8px">
-        <h2 style="color:#1B3A5C">Congratulations! You won the auction 🎉</h2>
-        <table style="width:100%;border-collapse:collapse;margin-top:16px">
-          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Property</td><td style="padding:8px;border:1px solid #ddd">${propertyTitle}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold">Final Bid</td><td style="padding:8px;border:1px solid #ddd">${finalBid} USD</td></tr>
-        </table>
-        <p style="margin-top:16px">The property owner will contact you soon to complete the process.</p>
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:32px;border:1px solid #e8e0d4;border-radius:12px;background:#fafaf8">
+        <div style="text-align:center;margin-bottom:24px">
+          <div style="font-size:48px;margin-bottom:8px">🏠</div>
+          <h2 style="color:#1a1a1a;font-family:Georgia,serif;font-weight:400;margin:0">Your Property Awaits</h2>
+        </div>
+        <p style="color:#555;font-size:15px;line-height:1.6">
+          ${isCompleted ? 'Your viewing has been <strong>completed</strong>' : 'Your viewing request has been <strong>approved</strong>'}.
+          You are now eligible to reserve <strong>${propertyTitle}</strong>.
+        </p>
+        <div style="background:#f5f0e8;border-left:3px solid #c9a96e;padding:16px;margin:20px 0;border-radius:4px">
+          <p style="margin:0;color:#6b5a3e;font-size:14px">✨ You have exclusive access to reserve this property. This window may be time-sensitive.</p>
+        </div>
+        <div style="text-align:center;margin:28px 0">
+          <a href="${process.env.CLIENT_URL}/properties" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#c9a96e,#a0783c);color:#fff;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600;letter-spacing:0.5px">
+            View &amp; Reserve Property
+          </a>
+        </div>
+        <p style="color:#aaa;font-size:12px;text-align:center;margin-top:24px">Luxe Estates &mdash; Premium Real Estate Platform</p>
       </div>
     `,
   });

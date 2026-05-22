@@ -239,31 +239,6 @@ router.patch('/admin/properties/:id/reject',
   dashboardController.rejectProperty
 );
 
-/**
- * @swagger
- * /dashboard/admin/auctions/{id}/approve:
- *   patch:
- *     tags: [📊 Dashboard]
- *     summary: Approve an auction (admin only)
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Auction approved
- *       401: { $ref: '#/components/responses/401' }
- *       403: { $ref: '#/components/responses/403' }
- */
-router.patch('/admin/auctions/:id/approve',
-  restrictTo('admin'),
-  checkPermission('manage_auctions'),
-  ownershipGuard({ model: 'Auction', ownerField: 'seller', idParam: 'id' }),
-  idempotencyMiddleware,
-  dashboardController.approveAuction
-);
 
 /**
  * @swagger

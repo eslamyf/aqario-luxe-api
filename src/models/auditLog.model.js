@@ -29,8 +29,6 @@ const AUDIT_ACTIONS = [
   'RESET_KYC',
   // Content moderation
   'DELETE_REVIEW',
-  // Auctions
-  'APPROVE_AUCTION',
 ];
 
 const auditLogSchema = new Schema(
@@ -64,7 +62,7 @@ const auditLogSchema = new Schema(
     targetType: {
       type: String,
       required: [true, 'Audit log must have a target type'],
-      enum: ['Property', 'Booking', 'User', 'Review', 'Auction'],
+      enum: ['Property', 'Booking', 'User', 'Review'],
       index: true,
     },
 

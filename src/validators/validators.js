@@ -52,5 +52,5 @@ exports.createViewingRequestSchema = Joi.object({
   message: Joi.string().max(500).optional(),
 });
 exports.updateViewingStatusSchema = Joi.object({
-  status: Joi.string().valid('approved','rejected').required(),
+  status: Joi.string().valid('approved', 'rejected', 'completed').required(),
 });

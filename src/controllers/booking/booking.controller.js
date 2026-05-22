@@ -2,6 +2,7 @@ const Booking  = require('../../models/booking.model');
 const Property = require('../../models/property.model');
 const { sendBookingConfirmationEmail } = require('../../services/email.service');
 const { createNotification } = require('../../utils/notificationHelper');
+const { checkViewingEligibility } = require('../../services/viewing.service');
 const logger = require('../../utils/logger');
 
 // ─── Create Booking ──────────────────────────────────────────
@@ -22,7 +23,7 @@ exports.createBooking = async (req, res, next) => {
       return res.status(400).json({ status: 'fail', message: req.t('BOOKING.START_NOT_PAST') });
     }
 
-    // FIX #6 — Check property existence and status before creating booking
+    // Check property existence and status before creating booking
     const property = await Property.findById(propertyId);
     if (!property) {
       return res.status(404).json({ status: 'fail', message: req.t('PROPERTY.NOT_FOUND') });
@@ -30,8 +31,21 @@ exports.createBooking = async (req, res, next) => {
     if (property.status !== 'available') {
       return res.status(400).json({ status: 'fail', message: req.t('PROPERTY.NOT_AVAILABLE') });
     }
-    if (property.listingType !== 'rent') {
-      return res.status(400).json({ status: 'fail', message: req.t('PROPERTY.FOR_SALE_ONLY') });
+
+    // ── Viewing-Gated Booking Guard ─────────────────────────────────────────────
+    // A booking can only be created if the user has an approved or completed
+    // viewing request for this property. This prevents spam/fake reservations.
+    const viewingCheck = await checkViewingEligibility(req.user._id, propertyId);
+    if (!viewingCheck.eligible) {
+      const statusMsg = viewingCheck.status === 'pending'
+        ? 'Your viewing request is still under review. Please wait for owner approval before booking.'
+        : 'Booking requires an approved or completed property viewing. Please schedule a viewing first.';
+      return res.status(403).json({
+        status: 'fail',
+        code:   'VIEWING_REQUIRED',
+        message: statusMsg,
+        data: { viewingStatus: viewingCheck.status },
+      });
     }
 
     // Check for date conflicts

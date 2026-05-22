@@ -54,7 +54,7 @@ const { globalLimiter, authLimiter } = require('./middlewares/advancedRateLimit.
 const { i18next, i18nMiddleware } = require('./config/i18n');
 
 // ── Jobs ────────────────────────────────────────────────────
-const { initAuctionJob } = require('./jobs/auction.job');
+
 const { initSavedSearchJob } = require('./jobs/savedSearch.job');
 const { initBookingJob } = require('./jobs/booking.job');
 const initPaymentExpiryJob = require('./jobs/payment-expiry.job');
@@ -71,8 +71,6 @@ const paymentRoutes = require('./routes/payment.routes');
 const inquiryRoutes = require('./routes/inquiry.routes');
 const viewingRequestRoutes = require('./routes/viewingRequest.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
-const auctionRoutes = require('./routes/auction.routes');
-const bidRoutes = require('./routes/bid.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const searchRoutes = require('./routes/search.routes');
 const reportRoutes = require('./routes/report.routes');
@@ -175,8 +173,6 @@ app.use(`${API}/payments`, paymentRoutes);
 app.use(`${API}/inquiries`, inquiryRoutes);
 app.use(`${API}/viewing-requests`, viewingRequestRoutes);
 app.use(`${API}/dashboard`, dashboardRoutes);
-app.use(`${API}/auctions`, auctionRoutes);
-app.use(`${API}/bids`, bidRoutes);
 app.use(`${API}/notifications`, notificationRoutes);
 app.use(`${API}/reports`, reportRoutes);
 app.use(`${API}/subscriptions`, subscriptionRoutes);
@@ -224,9 +220,8 @@ const startServer = async () => {
     logger.info(` API: http://localhost:${PORT}${API}`);
     logger.info(` Docs: http://localhost:${PORT}/api/docs`);
     logger.info(`  Health: http://localhost:${PORT}/api/health`);
-    initAuctionJob(io);
     initSavedSearchJob(io);
-    initBookingJob(io); // Additional Finding B FIX: Pass io to booking job
+    initBookingJob(io);
     initPaymentExpiryJob();
     initSubscriptionExpiryJob();
     initKycCleanupJob();

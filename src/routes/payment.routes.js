@@ -4,7 +4,6 @@ const paymentController = require('../controllers/payment.controller');
 const webhookController = require('../controllers/webhook.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
-const { requireKYC } = require('../middlewares/kyc.middleware');
 const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 
 // ─────────────────────────────────────────────────────────────────
@@ -41,7 +40,6 @@ const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware
 router.post(
   '/checkout',
   protect,
-  requireKYC,
   idempotencyMiddleware,
   paymentController.initiatePayment
 );

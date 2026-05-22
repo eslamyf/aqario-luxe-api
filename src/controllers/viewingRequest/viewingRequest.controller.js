@@ -1,9 +1,10 @@
 const ViewingRequest = require('../../models/viewingRequest.model');
 const Property       = require('../../models/property.model');
 const { createNotification } = require('../../utils/notificationHelper');
-const { sendViewingResponseEmail } = require('../../services/email.service');
+const { checkViewingEligibility, applyStatusUpdate } = require('../../services/viewing.service');
 const logger = require('../../utils/logger');
 
+// ─── Create Viewing Request ───────────────────────────────────
 exports.createViewingRequest = async (req, res, next) => {
   try {
     const { propertyId, preferredDate, preferredTime, message } = req.body;
@@ -39,7 +40,7 @@ exports.createViewingRequest = async (req, res, next) => {
       type:    'viewing',
       title:   req.t('NOTIFICATION.NEW_VIEWING'),
       message: req.t('NOTIFICATION.NEW_VIEWING_MSG', { name: req.user.name, property: property.title }),
-      link:    `/viewing-requests/${viewingRequest._id}`,
+      link:    `/properties/${property._id}`,
     }).catch(() => {});
 
     res.status(201).json({ status: 'success', message: req.t('VIEWING.SENT'), data: { viewingRequest } });
@@ -48,6 +49,7 @@ exports.createViewingRequest = async (req, res, next) => {
   }
 };
 
+// ─── Get My Viewing Requests (as buyer) ──────────────────────
 exports.getMyViewingRequests = async (req, res, next) => {
   try {
     const requests = await ViewingRequest.find({ requester: req.user._id })
@@ -58,6 +60,7 @@ exports.getMyViewingRequests = async (req, res, next) => {
   }
 };
 
+// ─── Get Owner Viewing Requests ───────────────────────────────
 exports.getOwnerViewingRequests = async (req, res, next) => {
   try {
     const requests = await ViewingRequest.find({ owner: req.user._id })
@@ -68,52 +71,56 @@ exports.getOwnerViewingRequests = async (req, res, next) => {
   }
 };
 
-// FIX — Add notification + email for requester on approval or rejection
+// ─── Check Viewing Status for Property (booking eligibility) ─
+exports.checkViewingStatus = async (req, res, next) => {
+  try {
+    const { propertyId } = req.params;
+    const result = await checkViewingEligibility(req.user._id, propertyId);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        eligible:  result.eligible,
+        viewingStatus: result.status,      // null | 'pending' | 'approved' | 'completed'
+        viewingId: result.viewingId,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Update Viewing Request Status ───────────────────────────
+// Allowed: owner/admin → approved | rejected | completed
 exports.updateStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
-    if (!['approved', 'rejected'].includes(status)) {
+    if (!['approved', 'rejected', 'completed'].includes(status)) {
       return res.status(400).json({ status: 'fail', message: req.t('VIEWING.STATUS_INVALID') });
     }
 
     const viewingRequest = await ViewingRequest.findById(req.params.id)
-      .populate('requester', 'email name').populate('property', 'title');
+      .populate('requester', 'email name').populate('property', 'title _id');
     if (!viewingRequest) return res.status(404).json({ status: 'fail', message: req.t('VIEWING.NOT_FOUND') });
-    if (viewingRequest.owner.toString() !== req.user._id.toString()) {
+
+    // Authorization: only the owner of the property or an admin can update
+    const isOwner = viewingRequest.owner.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ status: 'fail', message: req.t('COMMON.NOT_AUTHORIZED') });
     }
 
-    viewingRequest.status = status;
-    await viewingRequest.save();
+    // Apply update + fire notifications/emails via viewing service
+    await applyStatusUpdate(req.io, viewingRequest, status);
 
-    // Notify requester
-    const notifTitle = status === 'approved'
-      ? req.t('NOTIFICATION.VIEWING_APPROVED')
-      : req.t('NOTIFICATION.VIEWING_REJECTED');
-    const notifMsg = status === 'approved'
-      ? req.t('NOTIFICATION.VIEWING_APPROVED_MSG', { property: viewingRequest.property?.title })
-      : req.t('NOTIFICATION.VIEWING_REJECTED_MSG', { property: viewingRequest.property?.title });
-
-    await createNotification(req.io, viewingRequest.requester._id, {
-      type:    'viewing',
-      title:   notifTitle,
-      message: notifMsg,
-      link:    `/viewing-requests/${viewingRequest._id}`,
-    }).catch(() => {});
-
-    // Email to requester
-    if (viewingRequest.requester?.email) {
-      await sendViewingResponseEmail(viewingRequest.requester.email, {
-        status,
-        propertyTitle: viewingRequest.property?.title,
-        preferredDate: viewingRequest.preferredDate,
-        preferredTime: viewingRequest.preferredTime,
-      }).catch((e) => logger.warn(`[ViewingRequest] Email error: ${e.message}`));
-    }
+    let successMessage;
+    if (status === 'approved')  successMessage = req.t('VIEWING.APPROVED');
+    else if (status === 'completed') successMessage = 'Viewing marked as completed. Client can now book.';
+    else successMessage = req.t('VIEWING.REJECTED');
 
     res.status(200).json({
       status: 'success',
-      message: status === 'approved' ? req.t('VIEWING.APPROVED') : req.t('VIEWING.REJECTED'),
+      message: successMessage,
       data: { viewingRequest },
     });
   } catch (err) {
@@ -121,6 +128,7 @@ exports.updateStatus = async (req, res, next) => {
   }
 };
 
+// ─── Cancel Viewing Request (requester only) ──────────────────
 exports.cancelViewingRequest = async (req, res, next) => {
   try {
     const viewingRequest = await ViewingRequest.findById(req.params.id);

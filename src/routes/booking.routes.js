@@ -2,7 +2,6 @@ const express = require('express');
 const router  = express.Router();
 const bookingController = require('../controllers/booking/booking.controller');
 const { protect }       = require('../middlewares/auth.middleware');
-const { requireKYC }    = require('../middlewares/kyc.middleware');
 const restrictTo        = require('../middlewares/restrictTo.middleware');
 const checkPermission   = require('../middlewares/checkPermission.middleware');
 const validate          = require('../middlewares/validation.middleware');
@@ -44,7 +43,7 @@ router.use(protect);
  *         description: Property not available for the selected dates
  *       401: { $ref: '#/components/responses/401' }
  */
-router.post('/', requireKYC, validate(createBookingSchema), idempotencyMiddleware, bookingController.createBooking);
+router.post('/', validate(createBookingSchema), idempotencyMiddleware, bookingController.createBooking);
 
 /**
  * @swagger

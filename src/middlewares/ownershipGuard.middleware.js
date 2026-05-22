@@ -19,7 +19,6 @@ const mongoose = require('mongoose');
 
 const SUPPORTED_MODELS = {
   Property: () => require('../models/property.model'),
-  Auction:  () => require('../models/auction.model'),
   Booking:  () => require('../models/booking.model'),
   User:     () => require('../models/user.model'),
 };

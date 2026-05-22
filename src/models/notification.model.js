@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 
-// FIX — نموذج جديد للإشعارات — كان ناقصاً كلياً
 const notificationSchema = new mongoose.Schema(
   {
     userId: {
@@ -10,15 +9,15 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['booking', 'payment', 'inquiry', 'viewing', 'auction', 'review', 'system'],
+      enum: ['booking', 'payment', 'inquiry', 'viewing', 'review', 'system'],
       required: true,
     },
     title:   { type: String, required: true },
     message: { type: String, required: true },
     isRead:  { type: Boolean, default: false },
-    // رابط للـ entity المرتبط (عقار، مزاد، حجز...)
+    // Link to the associated entity (property, booking, etc.)
     link:    { type: String, default: null },
-    // بيانات إضافية
+    // Additional payload metadata
     meta:    { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }

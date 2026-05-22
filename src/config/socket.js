@@ -1,6 +1,5 @@
 const { Server } = require('socket.io');
 const jwt        = require('jsonwebtoken');
-const Auction    = require('../models/auction.model');
 const User       = require('../models/user.model');
 const { cacheGet, cacheSet } = require('./redis');
 const logger     = require('../utils/logger');
@@ -60,35 +59,6 @@ module.exports = (httpServer) => {
       socket.join(`user_${socket.user.id}`);
     }
 
-    // ── joinAuction ──────────────────────────────────────────
-    socket.on('joinAuction', async (auctionId) => {
-      try {
-        const auction = await Auction.findById(auctionId).populate('property', 'title location images');
-        if (!auction) {
-          socket.emit('error', { message: 'Auction not found' });
-          return;
-        }
-        socket.join(`auction_${auctionId}`);
-        socket.emit('auctionJoined', {
-          auctionId,
-          currentBid:    auction.currentBid,
-          startingPrice: auction.startingPrice,
-          bidIncrement:  auction.bidIncrement,
-          startDate:     auction.startDate,
-          endDate:       auction.endDate,
-          status:        auction.status,
-          property:      auction.property,
-        });
-      } catch (err) {
-        socket.emit('error', { message: 'Error occurred while joining the auction' });
-      }
-    });
-
-    // ── leaveAuction ─────────────────────────────────────────
-    socket.on('leaveAuction', (auctionId) => {
-      socket.leave(`auction_${auctionId}`);
-    });
-
     // ── disconnect ───────────────────────────────────────────
     socket.on('disconnect', (reason) => {
       logger.info(`❌ Socket disconnected: ${socket.id} — reason: ${reason}`);
@@ -104,25 +74,3 @@ module.exports.getIO = () => {
   return _io;
 };
 
-module.exports.emitNewBid = (auctionId, bidData) => {
-  if (!_io) return;
-  _io.to(`auction_${auctionId}`).emit('newBid', {
-    auctionId,
-    bid:        bidData,
-    currentBid: bidData.amount,
-    timestamp:  new Date(),
-  });
-};
-
-module.exports.emitAuctionClosed = (auctionId, winner, finalBid) => {
-  if (!_io) return;
-  _io.to(`auction_${auctionId}`).emit('auctionClosed', {
-    auctionId,
-    winner:   winner   || null,
-    finalBid: finalBid || null,
-    message:  winner
-      ? `Auction ended — Winner: ${winner.name} with a bid of ${finalBid}`
-      : 'Auction ended with no bids',
-    closedAt: new Date(),
-  });
-};
