@@ -9,14 +9,14 @@ const User = require(path.join(__dirname, '../models/user.model'));
 const createAdmin = async () => {
   try {
     // 1. Connect to DB
-    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/luxe_estates';
+    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe';
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 
     // 2. Admin Data
     const adminData = {
       name: 'Super Admin',
-      email: 'admin@luxe.com',
+      email: 'admin@aqario-luxe.com',
       password: 'Admin123!@#',
       role: 'admin',
       isVerified: true,

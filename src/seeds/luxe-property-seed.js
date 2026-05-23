@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const Property = require('../models/property.model');
 const User     = require('../models/user.model');
 
-const SEED_OWNER_EMAIL = 'owner@luxeestates.com';
+const SEED_OWNER_EMAIL = 'owner@aqario-luxe.com';
 
 const PROPERTIES = [
   { title: 'Sky Penthouse — Dubai Marina', description: 'Experience luxury living in this sprawling penthouse with panoramic sea views and private rooftop access.', price: 8500000, currency: 'AED', type: 'apartment', listingType: 'sale', status: 'available', location: { city: 'Dubai', district: 'Marina', street: 'JBR Walk' }, area: 450, bedrooms: 5, bathrooms: 6, features: ['Pool', 'Gym', 'Sea View'], images: ['https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200'], isApproved: true, featured: true },
@@ -30,7 +30,7 @@ async function seed() {
     console.log('✅ MongoDB connected');
     let owner = await User.findOne({ email: SEED_OWNER_EMAIL });
     if (!owner) {
-      owner = await User.create({ name: 'Luxe Estates', email: SEED_OWNER_EMAIL, password: 'LuxeOwner@2025!', role: 'owner', isVerified: true, isActive: true });
+      owner = await User.create({ name: 'Aqario Luxe', email: SEED_OWNER_EMAIL, password: 'LuxeOwner@2025!', role: 'owner', isVerified: true, isActive: true });
     }
     await Property.deleteMany({ owner: owner._id });
     const toInsert = PROPERTIES.map(p => ({ ...p, owner: owner._id }));

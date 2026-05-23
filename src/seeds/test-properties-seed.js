@@ -10,7 +10,7 @@ const mongoose = require('mongoose');
 const Property = require('../models/property.model');
 const User     = require('../models/user.model');
 
-const SEED_OWNER_EMAIL = 'owner@luxeestates.com';
+const SEED_OWNER_EMAIL = 'owner@aqario-luxe.com';
 
 const TEST_PROPERTIES = [
   {
@@ -132,7 +132,7 @@ const TEST_PROPERTIES = [
 
 async function seed() {
   try {
-    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/luxe_estates';
+    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe';
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 
@@ -140,7 +140,7 @@ async function seed() {
     let owner = await User.findOne({ email: SEED_OWNER_EMAIL });
     if (!owner) {
       owner = await User.create({
-        name: 'Luxe Estates Owner',
+        name: 'Aqario Luxe Owner',
         email: SEED_OWNER_EMAIL,
         password: 'LuxeOwner@2025!',
         role: 'owner',

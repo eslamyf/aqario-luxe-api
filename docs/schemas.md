@@ -1,4 +1,4 @@
-# 📐 Luxe Estates — Schema Reference Guide
+# 📐 Aqario Luxe — Schema Reference Guide
 
 > **Phase 3.4 — Schema Consistency Documentation**
 > Last updated: May 2026 | Source of truth for all cross-model field naming.
@@ -7,7 +7,7 @@
 
 ## ⚠️ The Naming Inconsistency Problem
 
-MongoDB doesn't enforce foreign key naming across collections. Over time, Luxe Estates accumulated inconsistent reference field names across models. This document is the **official reference** to prevent future mismatches.
+MongoDB doesn't enforce foreign key naming across collections. Over time, Aqario Luxe accumulated inconsistent reference field names across models. This document is the **official reference** to prevent future mismatches.
 
 ---
 

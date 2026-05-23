@@ -59,8 +59,8 @@ async function seedData() {
     const hashedPassword = await bcrypt.hash('password123', salt);
 
     const usersToCreate = [
-      { name: 'Luxe Admin', email: 'admin@luxe-estates.com', password: hashedPassword, authProvider: 'local', role: 'admin', isVerified: true },
-      { name: 'Elite Owner', email: 'owner@luxe-estates.com', password: hashedPassword, authProvider: 'local', role: 'owner', isVerified: true }
+      { name: 'Luxe Admin', email: 'admin@aqario-luxe.com', password: hashedPassword, authProvider: 'local', role: 'admin', isVerified: true },
+      { name: 'Elite Owner', email: 'owner@aqario-luxe.com', password: hashedPassword, authProvider: 'local', role: 'owner', isVerified: true }
     ];
 
     for (let i = 0; i < 48; i++) {
@@ -185,7 +185,7 @@ async function seedData() {
 
       // 5. Notifications (approx 300)
       notificationsData.push({
-        userId: buyer._id, type: 'system', title: 'Welcome to Luxe Estates',
+        userId: buyer._id, type: 'system', title: 'Welcome to Aqario Luxe',
         message: 'Your account has been successfully created.', isRead: Math.random() > 0.5, createdAt: date
       });
       notificationsData.push({
@@ -230,8 +230,8 @@ async function seedData() {
     console.log(`📊 Generated: 50 Users | 100 Properties | 300 Bookings/Payments | 1000 Views | 150 Reviews | 100 Inquiries | 600 Notifications`);
     console.log('--------------------------------------------------');
     console.log('Login Details:');
-    console.log('Admin: admin@luxe-estates.com | Password: password123');
-    console.log('Owner: owner@luxe-estates.com | Password: password123');
+    console.log('Admin: admin@aqario-luxe.com | Password: password123');
+    console.log('Owner: owner@aqario-luxe.com | Password: password123');
     console.log('--------------------------------------------------');
     process.exit(0);
   } catch (error) {

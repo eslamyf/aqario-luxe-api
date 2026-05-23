@@ -9,12 +9,12 @@ const User = require(path.join(__dirname, '../models/user.model'));
 const resetAdminPassword = async () => {
   try {
     // 1. Connect to DB
-    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/luxe_estates';
+    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe';
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 
     // 2. Admin credentials
-    const adminEmail = 'admin@luxe.com';
+    const adminEmail = 'admin@aqario-luxe.com';
     const newPassword = 'Admin123!@#';
 
     // 3. Find existing admin

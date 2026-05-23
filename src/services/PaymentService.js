@@ -16,6 +16,26 @@ const mongoose = require('mongoose');
 
 class PaymentService {
   /**
+   * Helper: calculate 5% platform fee (Production Requirement)
+   */
+  calculatePlatformFee(amount) {
+    return Math.round(amount * 0.05 * 100) / 100;
+  }
+
+  /**
+   * Helper: route payment creation to the provider factory
+   */
+  async createProviderPayment(paymentMethod, params) {
+    try {
+      const provider = ProviderFactory.getProvider(paymentMethod);
+      return await provider.createPayment(params);
+    } catch (err) {
+      logger.error(`[Payment] Provider error for ${paymentMethod}:`, err);
+      throw new Error(`Payment provider error: ${err.message}`);
+    }
+  }
+
+  /**
    * PHASE 1: Initiate Payment
    * Called after booking is APPROVED by owner/admin
    * 
@@ -46,8 +66,8 @@ class PaymentService {
         throw new Error('Invalid property price');
       }
 
-      // Platform service fee: 5% of property price (Production Requirement)
-      const platformFee = Math.round(propertyPrice * 0.05 * 100) / 100;
+      // Platform service fee calculation (centralized helper)
+      const platformFee = this.calculatePlatformFee(propertyPrice);
       const totalAmount = propertyPrice + platformFee;
       const netAmount = propertyPrice; // Owner receives the property price, platform takes the fee
 
@@ -62,10 +82,7 @@ class PaymentService {
 
       if (existingPayment) {
         // BUG-10 FIX: Idempotent retry — return existing pending payment instead of
-        // deleting it. The previous dev-mode bypass (`NODE_ENV=development` + delete)
-        // was a financial vulnerability: it allowed any dev-flagged server to silently
-        // destroy in-flight payments. Now we surface the existing record so the client
-        // can redirect the user back to the payment gateway to complete the flow.
+        // deleting it.
         if (existingPayment.status === 'pending') {
           logger.info(`[Payment] Idempotent resume: existing pending payment ${existingPayment._id} returned for booking ${bookingId}`);
           return {
@@ -109,12 +126,10 @@ class PaymentService {
 
       logger.info(`[Payment] Payment record created: ${payment._id}, status: PENDING`);
 
-      // 5. Route to provider
-      const provider = ProviderFactory.getProvider(paymentMethod);
+      // 5. Route to provider using unified helper
       let providerResult;
-
       try {
-        providerResult = await provider.createPayment({
+        providerResult = await this.createProviderPayment(paymentMethod, {
           amount: totalAmount,
           paymentId: payment._id.toString(),
           userId: userId,
@@ -127,8 +142,7 @@ class PaymentService {
         // Provider creation failed, mark payment as failed
         payment.status = 'failed';
         await payment.save();
-        logger.error(`[Payment] Provider error for ${paymentMethod}:`, providerErr);
-        throw new Error(`Payment provider error: ${providerErr.message}`);
+        throw providerErr;
       }
 
       // 6. Update payment with provider response
@@ -406,7 +420,7 @@ class PaymentService {
       const amount = promotionPrice[currency];
 
       // Service fee (5%) added to promotion price as well
-      const serviceFee = Math.round(amount * 0.05 * 100) / 100;
+      const serviceFee = this.calculatePlatformFee(amount);
       const totalAmount = amount + serviceFee;
 
       const PromotionTransaction = require('../models/promotionTransaction.model');
@@ -423,23 +437,29 @@ class PaymentService {
 
       await transaction.save();
 
-      // Route to provider
-      const provider = ProviderFactory.getProvider(paymentMethod);
-      const providerResult = await provider.createPayment({
-        amount: totalAmount,
-        paymentId: transaction._id.toString(),
-        userId,
-        propertyId,
-        propertyName: `Promotion: ${type} - ${property.title}`,
-        currency,
-      });
+      // Route to provider using unified helper
+      let providerResult;
+      try {
+        providerResult = await this.createProviderPayment(paymentMethod, {
+          amount: totalAmount,
+          paymentId: transaction._id.toString(),
+          userId,
+          propertyId,
+          propertyName: `Promotion: ${type} - ${property.title}`,
+          currency,
+        });
+      } catch (providerErr) {
+        transaction.status = 'failed';
+        await transaction.save();
+        throw providerErr;
+      }
 
       transaction.transactionId = providerResult.paymentKey;
       await transaction.save();
 
       return {
         paymentId: transaction._id,
-        paymentUrl: providerResult.paymentUrl,
+        paymentUrl: providerResult.paymentUrl || providerResult.iframeKey || null,
         totalAmount,
         currency
       };

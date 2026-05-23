@@ -6,12 +6,7 @@ const restrictTo = require('../middlewares/restrictTo.middleware');
 const ownershipGuard = require('../middlewares/ownershipGuard.middleware');
 const checkPermission = require('../middlewares/checkPermission.middleware');
 const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
-const paginate = require('../middlewares/paginate');
-const User = require('../models/user.model');
-const Booking = require('../models/booking.model');
-const Payment = require('../models/payment.model');
-const Property = require('../models/property.model');
-const Favorite = require('../models/favorite.model');
+
 
 router.use(protect);
 
@@ -67,7 +62,7 @@ router.get('/admin/activity', restrictTo('admin'), dashboardController.adminActi
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/admin/users', restrictTo('admin'), paginate(User), dashboardController.recentUsers);
+router.get('/admin/users', restrictTo('admin'), dashboardController.recentUsers);
 
 /**
  * @swagger
@@ -89,7 +84,7 @@ router.get('/admin/users', restrictTo('admin'), paginate(User), dashboardControl
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/admin/bookings', restrictTo('admin'), paginate(Booking), dashboardController.recentBookings);
+router.get('/admin/bookings', restrictTo('admin'), dashboardController.recentBookings);
 
 /**
  * @swagger
@@ -111,8 +106,8 @@ router.get('/admin/bookings', restrictTo('admin'), paginate(Booking), dashboardC
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/admin/payments', restrictTo('admin'), paginate(Payment), dashboardController.recentPayments);
-router.get('/admin/properties', restrictTo('admin'), paginate(Property), dashboardController.recentProperties);
+router.get('/admin/payments', restrictTo('admin'), dashboardController.recentPayments);
+router.get('/admin/properties', restrictTo('admin'), dashboardController.recentProperties);
 
 /**
  * @swagger
@@ -341,7 +336,7 @@ router.get('/owner/stats', restrictTo('owner', 'agent', 'admin'), dashboardContr
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/owner/properties', restrictTo('owner', 'agent', 'admin'), paginate(Property), dashboardController.ownerProperties);
+router.get('/owner/properties', restrictTo('owner', 'agent', 'admin'), dashboardController.ownerProperties);
 
 /**
  * @swagger
@@ -363,7 +358,7 @@ router.get('/owner/properties', restrictTo('owner', 'agent', 'admin'), paginate(
  *       401: { $ref: '#/components/responses/401' }
  *       403: { $ref: '#/components/responses/403' }
  */
-router.get('/owner/bookings', restrictTo('owner', 'agent', 'admin'), paginate(Booking), dashboardController.ownerBookings);
+router.get('/owner/bookings', restrictTo('owner', 'agent', 'admin'), dashboardController.ownerBookings);
 
 // ─── Buyer ────────────────────────────────────────────────────
 
@@ -400,7 +395,7 @@ router.get('/me/stats', dashboardController.buyerStats);
  *         description: Personal bookings
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/me/bookings', paginate(Booking), dashboardController.buyerBookings);
+router.get('/me/bookings', dashboardController.buyerBookings);
 
 /**
  * @swagger
@@ -421,7 +416,7 @@ router.get('/me/bookings', paginate(Booking), dashboardController.buyerBookings)
  *         description: Personal payments
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/me/payments', paginate(Payment), dashboardController.buyerPayments);
+router.get('/me/payments', dashboardController.buyerPayments);
 
 /**
  * @swagger
@@ -442,7 +437,7 @@ router.get('/me/payments', paginate(Payment), dashboardController.buyerPayments)
  *         description: Personal favorites
  *       401: { $ref: '#/components/responses/401' }
  */
-router.get('/me/favorites', paginate(Favorite), dashboardController.buyerFavorites);
+router.get('/me/favorites', dashboardController.buyerFavorites);
 
 // ─── Shared ───────────────────────────────────────────────────
 

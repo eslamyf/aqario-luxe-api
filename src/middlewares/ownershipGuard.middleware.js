@@ -9,7 +9,6 @@
  *
  * Usage:
  *   ownershipGuard({ model: 'Property', ownerField: 'owner', idParam: 'id' })
- *   ownershipGuard({ model: 'Auction', ownerField: 'seller', idParam: 'id' })
  *
  * For KYC (self-check), pass isSelfCheck: true and idParam pointing to userId param.
  * ─────────────────────────────────────────────────────────────────────────────

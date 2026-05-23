@@ -3,6 +3,8 @@ const asyncHandler = require('../../utils/asyncHandler');
 const AppError     = require('../../utils/AppError');
 const { createNotification } = require('../../utils/notificationHelper');
 
+const { getPaginationParams } = require('../../utils/paginate');
+
 // ─── Submit Report ────────────────────────────────────────────
 exports.submitReport = asyncHandler(async (req, res, next) => {
   const { targetType, targetId, reason, description } = req.body;
@@ -22,18 +24,24 @@ exports.submitReport = asyncHandler(async (req, res, next) => {
 
 // ─── Get All Reports (Admin) ──────────────────────────────────
 exports.getAllReports = asyncHandler(async (req, res) => {
-  const { status, targetType, page = 1, limit = 20 } = req.query;
+  const { status, targetType } = req.query;
   const filter = {};
   if (status)     filter.status     = status;
   if (targetType) filter.targetType = targetType;
 
-  const skip  = (page - 1) * limit;
-  const total = await Report.countDocuments(filter);
-  const reports = await Report.find(filter)
-    .populate('reporter', 'name email')
-    .sort('-createdAt').skip(skip).limit(Number(limit));
+  const { page, limit, skip } = getPaginationParams(req.query, 20, 100);
 
-  res.status(200).json({ status: 'success', total, page: Number(page), pages: Math.ceil(total / limit), data: { reports } });
+  const [total, reports] = await Promise.all([
+    Report.countDocuments(filter),
+    Report.find(filter)
+      .populate('reporter', 'name email')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit)
+      .lean()
+  ]);
+
+  res.status(200).json({ status: 'success', total, page, pages: Math.ceil(total / limit), data: { reports } });
 });
 
 // ─── Review Report (Admin) ────────────────────────────────────

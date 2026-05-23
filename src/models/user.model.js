@@ -61,7 +61,7 @@ const userSchema = new mongoose.Schema(
           'ban_user', 'change_role', 'update_permissions',
           'approve_kyc', 'reject_kyc',
           'delete_review', 'view_audit_logs',
-          'manage_auctions', 'export_data', 'bulk_actions',
+          'export_data', 'bulk_actions',
         ],
         message: 'Invalid permission: {VALUE}',
       },

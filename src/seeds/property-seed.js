@@ -6,7 +6,7 @@ const Property = require(path.join(__dirname, '../models/property.model'));
 
 const seedProperties = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/luxe_estates');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe');
     console.log('⏳ Clearing old properties and adding new ones...');
 
     await Property.deleteMany({});

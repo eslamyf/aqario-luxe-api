@@ -6,7 +6,7 @@ const User = require('../models/user.model');
 
 const createUser = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/luxe_estates';
+    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe';
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 

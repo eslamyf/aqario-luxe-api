@@ -5,6 +5,9 @@
 const User = require('../../models/user.model');
 const logger = require('../../utils/logger');
 const { logAction } = require('../../services/audit.service');
+const asyncHandler = require('../../utils/asyncHandler');
+const { getPaginationParams } = require('../../utils/paginate');
+const mongoose = require('mongoose');
 
 // ──────────────────────────────────────────────────────────
 // USER ENDPOINTS
@@ -14,301 +17,266 @@ const { logAction } = require('../../services/audit.service');
  * POST /api/v1/kyc
  * Upload KYC documents (National ID, Passport, etc.)
  */
-exports.uploadKYCDocuments = async (req, res, next) => {
-  try {
-    const { documentType, frontImage, backImage } = req.body;
+exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
+  const { documentType, frontImage, backImage } = req.body;
 
-    // Validate document type
-    const VALID_TYPES = ['national_id', 'passport', 'drivers_license'];
-    if (!VALID_TYPES.includes(documentType)) {
-      return res.status(400).json({
-        status: 'fail',
-        message: req.t('KYC.INVALID_DOC_TYPE', { types: VALID_TYPES.join(', ') }),
-      });
-    }
-
-    // Validate images (should already be Cloudinary URLs from upload middleware)
-    // Relaxed validation: users can upload what they want or delete everything.
-    // If no frontImage is provided, we just clear the identity documents later.
-
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
-    }
-
-    // ── Finalize ownership docs ──────
-    // Mark all current docs as permanent.
-    user.ownershipDocuments = user.ownershipDocuments.map(doc => {
-      doc.isTemporary = false;
-      return doc;
+  // Validate document type
+  const VALID_TYPES = ['national_id', 'passport', 'drivers_license'];
+  if (!VALID_TYPES.includes(documentType)) {
+    return res.status(400).json({
+      status: 'fail',
+      message: req.t('KYC.INVALID_DOC_TYPE', { types: VALID_TYPES.join(', ') }),
     });
-
-    // Store identity document(s) - replace old ones or clear if empty
-    if (frontImage) {
-      user.kycDocuments = [
-        {
-          type: documentType || 'national_id',
-          frontImage,
-          backImage: backImage || null,
-          uploadedAt: new Date(),
-        },
-      ];
-    } else {
-      user.kycDocuments = [];
-    }
-
-    // Update KYC status and version
-    if (user.kycDocuments.length === 0 && user.ownershipDocuments.length === 0) {
-      user.kycStatus = 'not_submitted';
-      user.kycSubmittedAt = undefined;
-    } else {
-      user.kycStatus = 'pending';
-      user.kycSubmittedAt = new Date();
-      user.kycVersion += 1; // Increment semantic version on final submission
-    }
-
-    await user.save({ validateBeforeSave: false });
-
-    logger.info(`[KYC] User ${user._id} submitted KYC (${documentType}) | ${user.ownershipDocuments.length} ownership docs → PENDING`);
-
-    res.status(200).json({
-      status: 'success',
-      message: req.t('KYC.SUBMITTED'),
-      data: {
-        kycStatus: 'pending',
-        submitted: true,
-        submittedAt: user.kycSubmittedAt,
-        documentType,
-        ownershipDocumentCount: user.ownershipDocuments.length
-      },
-    });
-  } catch (err) {
-    next(err);
   }
-};
+
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
+  }
+
+  // ── Finalize ownership docs ──────
+  user.ownershipDocuments = user.ownershipDocuments.map(doc => {
+    doc.isTemporary = false;
+    return doc;
+  });
+
+  // Store identity document(s) - replace old ones or clear if empty
+  if (frontImage) {
+    user.kycDocuments = [
+      {
+        type: documentType || 'national_id',
+        frontImage,
+        backImage: backImage || null,
+        uploadedAt: new Date(),
+      },
+    ];
+  } else {
+    user.kycDocuments = [];
+  }
+
+  // Update KYC status and version
+  if (user.kycDocuments.length === 0 && user.ownershipDocuments.length === 0) {
+    user.kycStatus = 'not_submitted';
+    user.kycSubmittedAt = undefined;
+  } else {
+    user.kycStatus = 'pending';
+    user.kycSubmittedAt = new Date();
+    user.kycVersion += 1; // Increment semantic version on final submission
+  }
+
+  await user.save({ validateBeforeSave: false });
+
+  logger.info(`[KYC] User ${user._id} submitted KYC (${documentType}) | ${user.ownershipDocuments.length} ownership docs → PENDING`);
+
+  res.status(200).json({
+    status: 'success',
+    message: req.t('KYC.SUBMITTED'),
+    data: {
+      kycStatus: 'pending',
+      submitted: true,
+      submittedAt: user.kycSubmittedAt,
+      documentType,
+      ownershipDocumentCount: user.ownershipDocuments.length
+    },
+  });
+});
 
 /**
  * POST /api/v1/kyc/upload
  * Upload a single KYC image to Cloudinary and return the URL
  */
-exports.uploadKYCImageSingle = async (req, res, next) => {
-  try {
-    if (!req.body.imageUrl) {
-      return res.status(400).json({ status: 'fail', message: 'Image upload failed' });
-    }
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        url: req.body.imageUrl,
-      },
-    });
-  } catch (err) {
-    next(err);
+exports.uploadKYCImageSingle = asyncHandler(async (req, res) => {
+  if (!req.body.imageUrl) {
+    return res.status(400).json({ status: 'fail', message: 'Image upload failed' });
   }
-};
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      url: req.body.imageUrl,
+    },
+  });
+});
 
 /**
  * POST /api/v1/kyc/ownership/upload
  * Upload a single ownership document file (PDF/image) to Cloudinary
  * and immediately save it to user.ownershipDocuments in DB
  */
-exports.uploadOwnershipFile = async (req, res, next) => {
-  try {
-    if (!req.body.fileUrl) {
-      return res.status(400).json({ status: 'fail', message: 'File upload failed' });
-    }
-
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ status: 'fail', message: 'User not found' });
-    }
-
-    const newDoc = {
-      fileUrl: req.body.fileUrl,
-      fileName: req.body.fileName || 'document',
-      fileType: req.body.fileType || 'image',
-      isTemporary: true,  // Will be finalized on KYC submit
-      uploadedAt: new Date(),
-    };
-
-    user.ownershipDocuments.push(newDoc);
-    await user.save({ validateBeforeSave: false });
-
-    // Get the saved subdocument with its generated _id
-    const savedDoc = user.ownershipDocuments[user.ownershipDocuments.length - 1];
-
-    logger.info(`[KYC] User ${user._id} uploaded ownership doc → ${savedDoc.fileName} (id: ${savedDoc._id})`);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        document: {
-          _id: savedDoc._id,
-          fileUrl: savedDoc.fileUrl,
-          fileName: savedDoc.fileName,
-          fileType: savedDoc.fileType,
-          isTemporary: savedDoc.isTemporary,
-          uploadedAt: savedDoc.uploadedAt,
-        },
-        total: user.ownershipDocuments.length,
-      },
-    });
-  } catch (err) {
-    next(err);
+exports.uploadOwnershipFile = asyncHandler(async (req, res) => {
+  if (!req.body.fileUrl) {
+    return res.status(400).json({ status: 'fail', message: 'File upload failed' });
   }
-};
+
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: 'User not found' });
+  }
+
+  const newDoc = {
+    fileUrl: req.body.fileUrl,
+    fileName: req.body.fileName || 'document',
+    fileType: req.body.fileType || 'image',
+    isTemporary: true,  // Will be finalized on KYC submit
+    uploadedAt: new Date(),
+  };
+
+  user.ownershipDocuments.push(newDoc);
+  await user.save({ validateBeforeSave: false });
+
+  // Get the saved subdocument with its generated _id
+  const savedDoc = user.ownershipDocuments[user.ownershipDocuments.length - 1];
+
+  logger.info(`[KYC] User ${user._id} uploaded ownership doc → ${savedDoc.fileName} (id: ${savedDoc._id})`);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      document: {
+        _id: savedDoc._id,
+        fileUrl: savedDoc.fileUrl,
+        fileName: savedDoc.fileName,
+        fileType: savedDoc.fileType,
+        isTemporary: savedDoc.isTemporary,
+        uploadedAt: savedDoc.uploadedAt,
+      },
+      total: user.ownershipDocuments.length,
+    },
+  });
+});
 
 /**
  * DELETE /api/v1/kyc/ownership/:docId
  * Remove an ownership document by its MongoDB _id
  */
-exports.deleteOwnershipFile = async (req, res, next) => {
-  try {
-    const { docId } = req.params;
+exports.deleteOwnershipFile = asyncHandler(async (req, res) => {
+  const { docId } = req.params;
 
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ status: 'fail', message: 'User not found' });
-    }
-
-    const docIndex = user.ownershipDocuments.findIndex(
-      doc => doc._id.toString() === docId
-    );
-
-    if (docIndex === -1) {
-      return res.status(404).json({ status: 'fail', message: 'Document not found' });
-    }
-
-    const removed = user.ownershipDocuments[docIndex];
-    user.ownershipDocuments.splice(docIndex, 1);
-
-    // If no documents remain at all, reset status
-    if (user.kycDocuments.length === 0 && user.ownershipDocuments.length === 0) {
-      user.kycStatus = 'not_submitted';
-      user.kycSubmittedAt = undefined;
-    }
-
-    await user.save({ validateBeforeSave: false });
-
-    logger.info(`[KYC] User ${user._id} deleted ownership doc id=${docId} → ${removed.fileName}`);
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Document removed successfully',
-      data: { remaining: user.ownershipDocuments.length },
-    });
-  } catch (err) {
-    next(err);
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: 'User not found' });
   }
-};
 
+  const docIndex = user.ownershipDocuments.findIndex(
+    doc => doc._id.toString() === docId
+  );
+
+  if (docIndex === -1) {
+    return res.status(404).json({ status: 'fail', message: 'Document not found' });
+  }
+
+  const removed = user.ownershipDocuments[docIndex];
+  user.ownershipDocuments.splice(docIndex, 1);
+
+  // If no documents remain at all, reset status
+  if (user.kycDocuments.length === 0 && user.ownershipDocuments.length === 0) {
+    user.kycStatus = 'not_submitted';
+    user.kycSubmittedAt = undefined;
+  }
+
+  await user.save({ validateBeforeSave: false });
+
+  logger.info(`[KYC] User ${user._id} deleted ownership doc id=${docId} → ${removed.fileName}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Document removed successfully',
+    data: { remaining: user.ownershipDocuments.length },
+  });
+});
 
 /**
  * DELETE /api/v1/kyc/identity-document
  * Immediately remove identity document (front/back card or passport) from DB
  */
-exports.deleteIdentityDocument = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ status: 'fail', message: 'User not found' });
-    }
-
-    user.kycDocuments = [];
-
-    // If no ownership docs remain either, reset status
-    if (user.ownershipDocuments.length === 0) {
-      user.kycStatus = 'not_submitted';
-      user.kycSubmittedAt = undefined;
-    }
-
-    await user.save({ validateBeforeSave: false });
-
-    logger.info(`[KYC] User ${user._id} deleted identity documents from DB`);
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Identity documents removed successfully',
-      data: { kycStatus: user.kycStatus }
-    });
-  } catch (err) {
-    next(err);
+exports.deleteIdentityDocument = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: 'User not found' });
   }
-};
 
+  user.kycDocuments = [];
+
+  // If no ownership docs remain either, reset status
+  if (user.ownershipDocuments.length === 0) {
+    user.kycStatus = 'not_submitted';
+    user.kycSubmittedAt = undefined;
+  }
+
+  await user.save({ validateBeforeSave: false });
+
+  logger.info(`[KYC] User ${user._id} deleted identity documents from DB`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Identity documents removed successfully',
+    data: { kycStatus: user.kycStatus }
+  });
+});
 
 /**
  * GET /api/v1/kyc/status
  * Check current KYC verification status
  */
-exports.getKYCStatus = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user._id).select(
-      'kycStatus kycSubmittedAt kycVerifiedAt kycApprovedAt kycRejectionReason'
-    );
+exports.getKYCStatus = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select(
+    'kycStatus kycSubmittedAt kycVerifiedAt kycApprovedAt kycRejectionReason'
+  );
 
-    if (!user) {
-      return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
-    }
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        kycStatus: user.kycStatus,
-        submitted: !!user.kycSubmittedAt,
-        verified: !!user.kycVerifiedAt,
-        approved: user.kycStatus === 'approved',
-        pending: user.kycStatus === 'pending',
-        rejected: user.kycStatus === 'rejected',
-        submittedAt: user.kycSubmittedAt,
-        approvedAt: user.kycApprovedAt,
-        rejectionReason: user.kycRejectionReason,
-      },
-    });
-  } catch (err) {
-    next(err);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   }
-};
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      kycStatus: user.kycStatus,
+      submitted: !!user.kycSubmittedAt,
+      verified: !!user.kycVerifiedAt,
+      approved: user.kycStatus === 'approved',
+      pending: user.kycStatus === 'pending',
+      rejected: user.kycStatus === 'rejected',
+      submittedAt: user.kycSubmittedAt,
+      approvedAt: user.kycApprovedAt,
+      rejectionReason: user.kycRejectionReason,
+    },
+  });
+});
 
 /**
  * GET /api/v1/kyc/me
  * Get detailed KYC information for current user
  */
-exports.getMyKYC = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user._id).select(
-      'name email photo kycStatus kycDocuments ownershipDocuments kycSubmittedAt kycVerifiedAt kycApprovedAt kycRejectionReason kycVersion'
-    );
+exports.getMyKYC = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select(
+    'name email photo kycStatus kycDocuments ownershipDocuments kycSubmittedAt kycVerifiedAt kycApprovedAt kycRejectionReason kycVersion'
+  );
 
-    if (!user) {
-      return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
-    }
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        user: {
-          name: user.name,
-          email: user.email,
-          kycStatus: user.kycStatus,
-        },
-        kycInfo: {
-          status: user.kycStatus,
-          documentcount: user.kycDocuments.length,
-          documents: user.kycDocuments,
-          ownershipDocuments: user.ownershipDocuments,
-          version: user.kycVersion,
-          submittedAt: user.kycSubmittedAt,
-          approvedAt: user.kycApprovedAt,
-          rejectionReason: user.kycRejectionReason,
-        },
-      },
-    });
-  } catch (err) {
-    next(err);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   }
-};
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        name: user.name,
+        email: user.email,
+        kycStatus: user.kycStatus,
+      },
+      kycInfo: {
+        status: user.kycStatus,
+        documentcount: user.kycDocuments.length,
+        documents: user.kycDocuments,
+        ownershipDocuments: user.ownershipDocuments,
+        version: user.kycVersion,
+        submittedAt: user.kycSubmittedAt,
+        approvedAt: user.kycApprovedAt,
+        rejectionReason: user.kycRejectionReason,
+      },
+    },
+  });
+});
 
 // ──────────────────────────────────────────────────────────
 // ADMIN ENDPOINTS
@@ -318,90 +286,83 @@ exports.getMyKYC = async (req, res, next) => {
  * GET /api/v1/admin/kyc/list
  * List KYC submissions with advanced filtering and search (Admin only)
  */
-exports.getKYCList = async (req, res, next) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
-    const { search, status } = req.query;
+exports.getKYCList = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = getPaginationParams(req.query, 50, 100);
+  const { search, status } = req.query;
 
-    const filter = {};
+  const filter = {};
 
-    // 1. Filter by status
-    if (status && status !== 'all') {
-      filter.kycStatus = status;
-    } else {
-      // In KYC center, 'all' means everyone who at least attempted verification
-      // Exclude those who haven't submitted anything yet
-      filter.kycStatus = { $ne: 'not_submitted' };
-    }
-
-    // 2. Search by Name or Email
-    if (search && search.trim() !== '') {
-      const searchRegex = { $regex: search.trim(), $options: 'i' };
-      filter.$or = [
-        { name: searchRegex },
-        { email: searchRegex }
-      ];
-    }
-
-    const [users, total] = await Promise.all([
-      User.find(filter)
-        .select('+kycSubmittedAt +kycApprovedAt name email kycStatus kycDocuments kycVersion kycAttempts ownershipDocuments kycRejectionReason createdAt')
-        .skip(skip)
-        .limit(limit)
-        .sort('-createdAt'),
-      User.countDocuments(filter)
-    ]);
-
-    res.status(200).json({
-      status: 'success',
-      results: users.length,
-      total,
-      page,
-      pages: Math.ceil(total / limit),
-      data: { users },
-    });
-  } catch (err) {
-    next(err);
+  // 1. Filter by status
+  if (status && status !== 'all') {
+    filter.kycStatus = status;
+  } else {
+    // In KYC center, 'all' means everyone who at least attempted verification
+    // Exclude those who haven't submitted anything yet
+    filter.kycStatus = { $ne: 'not_submitted' };
   }
-};
+
+  // 2. Search by Name or Email
+  if (search && search.trim() !== '') {
+    const searchRegex = { $regex: search.trim(), $options: 'i' };
+    filter.$or = [
+      { name: searchRegex },
+      { email: searchRegex }
+    ];
+  }
+
+  const [users, total] = await Promise.all([
+    User.find(filter)
+      .select('+kycSubmittedAt +kycApprovedAt name email kycStatus kycDocuments kycVersion kycAttempts ownershipDocuments kycRejectionReason createdAt')
+      .skip(skip)
+      .limit(limit)
+      .sort('-createdAt')
+      .lean(),
+    User.countDocuments(filter)
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    results: users.length,
+    total,
+    page,
+    pages: Math.ceil(total / limit),
+    data: { users },
+  });
+});
 
 /**
  * GET /api/v1/admin/kyc/summary
  * Get KYC statistics (Admin only)
  */
-exports.getKYCSummary = async (req, res, next) => {
-  try {
-    const total = await User.countDocuments();
-    const notSubmitted = await User.countDocuments({ kycStatus: 'not_submitted' });
-    const pending = await User.countDocuments({ kycStatus: 'pending' });
-    const approved = await User.countDocuments({ kycStatus: 'approved' });
-    const rejected = await User.countDocuments({ kycStatus: 'rejected' });
+exports.getKYCSummary = asyncHandler(async (req, res) => {
+  const [total, notSubmitted, pending, approved, rejected] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ kycStatus: 'not_submitted' }),
+    User.countDocuments({ kycStatus: 'pending' }),
+    User.countDocuments({ kycStatus: 'approved' }),
+    User.countDocuments({ kycStatus: 'rejected' })
+  ]);
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        total,
-        kycStats: {
-          notSubmitted,
-          pending,
-          approved,
-          rejected,
-          completionRate: total > 0 ? ((approved / total) * 100).toFixed(2) : 0,
-        },
+  res.status(200).json({
+    status: 'success',
+    data: {
+      total,
+      kycStats: {
+        notSubmitted,
+        pending,
+        approved,
+        rejected,
+        completionRate: total > 0 ? ((approved / total) * 100).toFixed(2) : 0,
       },
-    });
-  } catch (err) {
-    next(err);
-  }
-};
+    },
+  });
+});
 
 /**
  * PATCH /api/v1/admin/kyc/:userId/approve
  * Approve KYC submission (Admin only)
  */
-exports.approveKYC = async (req, res, next) => {
+exports.approveKYC = asyncHandler(async (req, res) => {
   const useTransaction = process.env.NODE_ENV === 'production';
   const session = useTransaction ? await mongoose.startSession() : null;
   if (session) session.startTransaction();
@@ -434,7 +395,6 @@ exports.approveKYC = async (req, res, next) => {
     }
 
     const prevStatus = user.kycStatus;
-    const prevRole = user.role;
     user.kycStatus = 'approved';
     user.isVerified = true;
     user.kycVerifiedAt = new Date();
@@ -474,17 +434,17 @@ exports.approveKYC = async (req, res, next) => {
     });
   } catch (err) {
     if (session) await session.abortTransaction();
-    next(err);
+    throw err;
   } finally {
     if (session) session.endSession();
   }
-};
+});
 
 /**
  * PATCH /api/v1/admin/kyc/:userId/reject
  * Reject KYC submission (Admin only)
  */
-exports.rejectKYC = async (req, res, next) => {
+exports.rejectKYC = asyncHandler(async (req, res) => {
   const useTransaction = process.env.NODE_ENV === 'production';
   const session = useTransaction ? await mongoose.startSession() : null;
   if (session) session.startTransaction();
@@ -553,17 +513,17 @@ exports.rejectKYC = async (req, res, next) => {
     });
   } catch (err) {
     if (session) await session.abortTransaction();
-    next(err);
+    throw err;
   } finally {
     if (session) session.endSession();
   }
-};
+});
 
 /**
  * PATCH /api/v1/admin/kyc/:userId/revert
  * Revert KYC status to pending for re-evaluation (Admin only)
  */
-exports.revertKYC = async (req, res, next) => {
+exports.revertKYC = asyncHandler(async (req, res) => {
   const useTransaction = process.env.NODE_ENV === 'production';
   const session = useTransaction ? await mongoose.startSession() : null;
   if (session) session.startTransaction();
@@ -621,17 +581,17 @@ exports.revertKYC = async (req, res, next) => {
     });
   } catch (err) {
     if (session) await session.abortTransaction();
-    next(err);
+    throw err;
   } finally {
     if (session) session.endSession();
   }
-};
+});
 
 /**
  * PATCH /api/v1/admin/kyc/:userId/reset
  * Reset KYC status to allow resubmission (Admin only)
  */
-exports.resetKYC = async (req, res, next) => {
+exports.resetKYC = asyncHandler(async (req, res) => {
   const useTransaction = process.env.NODE_ENV === 'production';
   const session = useTransaction ? await mongoose.startSession() : null;
   if (session) session.startTransaction();
@@ -662,7 +622,6 @@ exports.resetKYC = async (req, res, next) => {
     }
 
     const prevStatus = user.kycStatus;
-    const prevRole = user.role;
 
     user.kycStatus = 'not_submitted';
     user.kycDocuments = [];
@@ -701,8 +660,8 @@ exports.resetKYC = async (req, res, next) => {
     });
   } catch (err) {
     if (session) await session.abortTransaction();
-    next(err);
+    throw err;
   } finally {
     if (session) session.endSession();
   }
-};
+});

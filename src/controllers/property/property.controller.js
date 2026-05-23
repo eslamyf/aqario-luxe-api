@@ -10,6 +10,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const AppError = require('../../utils/AppError');
 const { clearCache } = require('../../middlewares/cache.middleware');
 const { checkSavedSearches } = require('../../services/savedSearch.service');
+const { getPaginationParams } = require('../../utils/paginate');
 
 // ─── Helper: derive Cloudinary public_id from URL ─────────────────────────────
 const publicIdFromUrl = (url) => {
@@ -132,16 +133,7 @@ exports.getProperty = asyncHandler(async (req, res, next) => {
 
 // ─── Update Property ──────────────────────────────────────────────────────────
 exports.updateProperty = asyncHandler(async (req, res, next) => {
-  const propertyToUpdate = await Property.findById(req.params.id);
-  if (!propertyToUpdate) return next(new AppError(req.t('PROPERTY.NOT_FOUND'), 404));
-
-  if (
-    propertyToUpdate.owner.toString() !== req.user._id.toString() &&
-    req.user.role !== 'admin'
-  ) {
-    return next(new AppError(req.t('COMMON.NOT_AUTHORIZED'), 403));
-  }
-
+  const property = req.property; // already fetched and verified by isOwner middleware
   const updates = { ...req.body };
 
   // Append images rather than replace when ?append=true
@@ -152,10 +144,9 @@ exports.updateProperty = asyncHandler(async (req, res, next) => {
     delete updates.images;
   }
 
-  const property = await Property.findByIdAndUpdate(req.params.id, updates, {
-    new: true,
-    runValidators: true,
-  });
+  // Update properties on the existing document and save (runs validation)
+  Object.assign(property, updates);
+  await property.save();
 
   clearCache('/api/v1/properties');
   clearCache('/api/v1/search');
@@ -164,15 +155,7 @@ exports.updateProperty = asyncHandler(async (req, res, next) => {
 
 // ─── Delete Property ──────────────────────────────────────────────────────────
 exports.deleteProperty = asyncHandler(async (req, res, next) => {
-  const property = await Property.findById(req.params.id);
-  if (!property) return next(new AppError(req.t('PROPERTY.NOT_FOUND'), 404));
-
-  if (
-    property.owner.toString() !== req.user._id.toString() &&
-    req.user.role !== 'admin'
-  ) {
-    return next(new AppError(req.t('COMMON.NOT_AUTHORIZED'), 403));
-  }
+  const property = req.property; // already fetched and verified by isOwner middleware
 
   // Remove images from Cloudinary (best-effort — don't fail deletion if CDN call fails)
   await Promise.allSettled(
@@ -215,25 +198,25 @@ exports.deletePropertyImage = asyncHandler(async (req, res, next) => {
 
 // ─── Get My Properties ────────────────────────────────────────────────────────
 exports.getMyProperties = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, status } = req.query;
+  const { status } = req.query;
   const filter = { owner: req.user._id };
   if (status) filter.status = status;
 
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = getPaginationParams(req.query);
 
   const [total, properties] = await Promise.all([
     Property.countDocuments(filter),
     Property.find(filter)
       .sort('-createdAt')
       .skip(skip)
-      .limit(Number(limit))
+      .limit(limit)
       .lean(),
   ]);
 
   res.status(200).json({
     status: 'success',
     total,
-    page: Number(page),
+    page,
     pages: Math.ceil(total / limit),
     results: properties.length,
     data: { properties },

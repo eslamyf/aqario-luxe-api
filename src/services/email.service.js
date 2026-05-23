@@ -118,7 +118,7 @@ exports.sendViewingApprovedBookingEmail = async (email, { propertyTitle, preferr
             View &amp; Reserve Property
           </a>
         </div>
-        <p style="color:#aaa;font-size:12px;text-align:center;margin-top:24px">Luxe Estates &mdash; Premium Real Estate Platform</p>
+        <p style="color:#aaa;font-size:12px;text-align:center;margin-top:24px">Aqario Luxe &mdash; Premium Real Estate Platform</p>
       </div>
     `,
   });

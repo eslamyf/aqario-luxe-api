@@ -1,7 +1,9 @@
 const Favorite = require('../../models/favorite.model');
 const Property = require('../../models/property.model');
+const asyncHandler = require('../../utils/asyncHandler');
+const { getPaginationParams } = require('../../utils/paginate');
 
-exports.addFavorite = async (req, res, next) => {
+exports.addFavorite = asyncHandler(async (req, res) => {
   try {
     const { propertyId } = req.body;
     const property = await Property.findById(propertyId);
@@ -15,36 +17,38 @@ exports.addFavorite = async (req, res, next) => {
     if (err.code === 11000) {
       return res.status(409).json({ status: 'fail', message: req.t('FAVORITE.ALREADY_EXISTS') });
     }
-    next(err);
+    throw err;
   }
-};
+});
 
-exports.getFavorites = async (req, res, next) => {
-  try {
-    const page  = parseInt(req.query.page)  || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip  = (page - 1) * limit;
+exports.getFavorites = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = getPaginationParams(req.query);
 
-    const total     = await Favorite.countDocuments({ user_id: req.user._id });
-    const favorites = await Favorite.find({ user_id: req.user._id })
+  const [total, favorites] = await Promise.all([
+    Favorite.countDocuments({ user_id: req.user._id }),
+    Favorite.find({ user_id: req.user._id })
       .populate('property_id', 'title price location images avgRating status')
-      .limit(limit).skip(skip).sort({ created_at: -1 });
+      .skip(skip)
+      .limit(limit)
+      .sort({ created_at: -1 })
+      .lean(),
+  ]);
 
-    res.status(200).json({ status: 'success', count: favorites.length, total, page, pages: Math.ceil(total / limit), data: { favorites } });
-  } catch (err) {
-    next(err);
-  }
-};
+  res.status(200).json({
+    status: 'success',
+    count: favorites.length,
+    total,
+    page,
+    pages: Math.ceil(total / limit),
+    data: { favorites },
+  });
+});
 
-exports.removeFavorite = async (req, res, next) => {
-  try {
-    const deleted = await Favorite.findOneAndDelete({
-      user_id:     req.user._id,
-      property_id: req.params.propertyId,
-    });
-    if (!deleted) return res.status(404).json({ status: 'fail', message: req.t('FAVORITE.NOT_FOUND') });
-    res.status(200).json({ status: 'success', message: req.t('FAVORITE.REMOVED') });
-  } catch (err) {
-    next(err);
-  }
-};
+exports.removeFavorite = asyncHandler(async (req, res) => {
+  const deleted = await Favorite.findOneAndDelete({
+    user_id:     req.user._id,
+    property_id: req.params.propertyId,
+  });
+  if (!deleted) return res.status(404).json({ status: 'fail', message: req.t('FAVORITE.NOT_FOUND') });
+  res.status(200).json({ status: 'success', message: req.t('FAVORITE.REMOVED') });
+});

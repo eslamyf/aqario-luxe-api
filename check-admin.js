@@ -9,7 +9,7 @@ const check = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('Connected to DB...\n');
     
-    const admin = await User.findOne({ email: 'admin@luxe.com' }).select('+password');
+    const admin = await User.findOne({ email: 'admin@aqario-luxe.com' }).select('+password');
     if (admin) {
       console.log('✅ ADMIN ACCOUNT FOUND:');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -28,7 +28,7 @@ const check = async () => {
       
       const newAdmin = await User.create({
         name: 'Super Admin',
-        email: 'admin@luxe.com',
+        email: 'admin@aqario-luxe.com',
         password: 'Admin123!@#',
         role: 'admin',
         isVerified: true,
@@ -36,7 +36,7 @@ const check = async () => {
       });
       
       console.log('✅ Admin created successfully');
-      console.log('📧 Email: admin@luxe.com');
+      console.log('📧 Email: admin@aqario-luxe.com');
       console.log('🔑 Password: Admin123!@#');
     }
     

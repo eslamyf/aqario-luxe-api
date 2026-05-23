@@ -2,15 +2,14 @@ const User = require('../models/user.model');
 const RefreshToken = require('../models/refreshToken.model');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
+const { getPaginationParams } = require('../utils/paginate');
 
 // Fields that must never be returned to any client — not even admins
 const SAFE_USER_PROJECTION = '-bankAccounts.ibanEncrypted -loginAttempts -lockUntil -__v';
 
 // ─── Get All Users (Admin) ────────────────────────────────────
 exports.getAllUsers = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = getPaginationParams(req.query);
 
   const [total, users] = await Promise.all([
     User.countDocuments(),
@@ -55,7 +54,8 @@ exports.getUser = asyncHandler(async (req, res, next) => {
 // Returns user profile + role-specific dashboard data.
 // All independent queries within each branch run in parallel (Promise.all).
 exports.getMe = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).lean();
+  // OPTIMIZATION: Avoid database roundtrip. req.user is already fetched by protect middleware.
+  const user = req.user.toObject ? req.user.toObject() : { ...req.user };
   const dashboard = {};
 
   if (user.role === 'owner' || user.role === 'agent') {

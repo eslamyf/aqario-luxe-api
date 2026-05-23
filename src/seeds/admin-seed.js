@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const seedProperties = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/luxe_estates');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe');
     console.log('⏳ Seeding properties with correct validation...');
 
     await Property.deleteMany({});

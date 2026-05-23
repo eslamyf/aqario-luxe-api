@@ -4,6 +4,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const AppError     = require('../../utils/AppError');
 const { cacheMiddleware } = require('../../middlewares/cache.middleware');
 const { trackPropertyView } = require('../../services/analytics.service');
+const { getPaginationParams } = require('../../utils/paginate');
 
 // ─── Advanced Search ──────────────────────────────────────────
 // @route GET /api/v1/search
@@ -12,13 +13,13 @@ exports.advancedSearch = asyncHandler(async (req, res) => {
     q, type, listingType, city, district, minPrice, maxPrice,
     minArea, maxArea, bedrooms, bathrooms, minRating,
     sortBy = 'createdAt', order = 'desc',
-    page = 1, limit = 12,
   } = req.query;
+
+  const { page, limit, skip } = getPaginationParams(req.query, 12, 100);
 
   const filter = { isApproved: true, status: 'available' };
 
   // Text search — using MongoDB text index for O(log n) performance instead of O(n) $regex
-  // FIX — Confirmed use of $text to ensure best performance
   let textSearchScore = null;
   if (q) {
     filter.$text = { $search: q };
@@ -47,15 +48,11 @@ exports.advancedSearch = asyncHandler(async (req, res) => {
   const validSorts = ['price', 'createdAt', 'avgRating', 'area', 'bedrooms'];
   const sortField  = validSorts.includes(sortBy) ? sortBy : 'createdAt';
 
-  const skip  = (Number(page) - 1) * Number(limit);
-  const total = await Property.countDocuments(filter);
-
   let query = Property.find(filter);
   
   // When using text search, include text score and prioritize by relevance
   if (textSearchScore) {
     query = query.select({ score: { $meta: 'textScore' }, '-__v': 1 });
-    // Sort by text score first if text search is active, then by specified sort field
     if (sortField === 'createdAt') {
       query = query.sort({ score: { $meta: 'textScore' }, [sortField]: sortOrder });
     } else {
@@ -64,23 +61,21 @@ exports.advancedSearch = asyncHandler(async (req, res) => {
   } else {
     query = query.select('-__v').sort({ [sortField]: sortOrder });
   }
-  
-  const properties = await query
-    .populate('owner', 'name email phone photo')
-    .skip(skip)
-    .limit(Number(limit));
 
-  // Price stats for the current search
-  const priceStats = await Property.aggregate([
-    { $match: filter },
-    { $group: { _id: null, min: { $min: '$price' }, max: { $max: '$price' }, avg: { $avg: '$price' } } },
+  const [total, properties, priceStats] = await Promise.all([
+    Property.countDocuments(filter),
+    query.populate('owner', 'name email phone photo').skip(skip).limit(limit).lean(),
+    Property.aggregate([
+      { $match: filter },
+      { $group: { _id: null, min: { $min: '$price' }, max: { $max: '$price' }, avg: { $avg: '$price' } } },
+    ])
   ]);
 
   res.status(200).json({
     status: 'success',
     total,
-    page:   Number(page),
-    pages:  Math.ceil(total / Number(limit)),
+    page,
+    pages:  Math.ceil(total / limit),
     count:  properties.length,
     priceStats: priceStats[0] ? {
       min: Math.round(priceStats[0].min),
