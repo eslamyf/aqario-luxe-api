@@ -56,12 +56,15 @@ describe('Property Routes', () => {
         .post('/api/v1/properties')
         .set('Authorization', `Bearer ${ownerToken}`)
         .send({
-          title:       'Luxury apartment for sale in New Cairo',
-          description: 'Distinctive apartment with an excellent strategic location',
+          title:       { en: 'Luxury apartment for sale in New Cairo', ar: 'شقة فاخرة للبيع في القاهرة الجديدة' },
+          description: { en: 'Distinctive apartment with an excellent strategic location', ar: 'شقة مميزة بموقع استراتيجي ممتاز' },
           price:       1_500_000,
           type:        'apartment',
           listingType: 'sale',
-          location:    { city: 'Cairo', district: 'Nasr City' },
+          location:    {
+            city: { en: 'Cairo', ar: 'القاهرة' },
+            district: { en: 'Nasr City', ar: 'مدينة نصر' }
+          },
           bedrooms:    3,
           bathrooms:   2,
           area:        150,
@@ -75,7 +78,12 @@ describe('Property Routes', () => {
     it('should reject unauthenticated property creation with 401', async () => {
       const res = await request(app)
         .post('/api/v1/properties')
-        .send({ title: 'No Auth', price: 1000, type: 'apartment', listingType: 'sale' });
+        .send({
+          title: { en: 'No Auth English', ar: 'لا يوجد صلاحية عربي' },
+          price: 1000,
+          type: 'apartment',
+          listingType: 'sale'
+        });
 
       expect(res.status).toBe(401);
     });
@@ -85,12 +93,15 @@ describe('Property Routes', () => {
         .post('/api/v1/properties')
         .set('Authorization', `Bearer ${buyerToken}`)
         .send({
-          title:       'Buyer Property',
-          description: 'Test',
+          title:       { en: 'Buyer Property English', ar: 'عقار المشتري باللغة العربية' },
+          description: { en: 'Test description for buyer property validation', ar: 'وصف تجريبي لعقار المشتري للتأكد' },
           price:       1000,
           type:        'apartment',
           listingType: 'sale',
-          location:    { city: 'Cairo', district: 'Nasr' },
+          location:    {
+            city: { en: 'Cairo', ar: 'القاهرة' },
+            district: { en: 'Nasr', ar: 'نصر' }
+          },
         });
 
       expect(res.status).toBe(403);
@@ -104,12 +115,15 @@ describe('Property Routes', () => {
         .post('/api/v1/properties')
         .set('Authorization', `Bearer ${ownerToken}`)
         .send({
-          title:       'CRUD Test Property',
-          description: 'For testing CRUD operations',
+          title:       { en: 'CRUD Test Property', ar: 'عقار تجريبي للعمليات الأساسية' },
+          description: { en: 'For testing CRUD operations in English', ar: 'وصف تجريبي للعمليات الأساسية بالعربي' },
           price:       500_000,
           type:        'villa',
           listingType: 'sale',
-          location:    { city: 'Alexandria', district: 'Smouha' },
+          location:    {
+            city: { en: 'Alexandria', ar: 'الإسكندرية' },
+            district: { en: 'Smouha', ar: 'سموحة' }
+          },
           bedrooms:    4,
           bathrooms:   3,
           area:        300,
@@ -123,7 +137,7 @@ describe('Property Routes', () => {
         .set('Authorization', `Bearer ${ownerToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.data.property.title).toBe('CRUD Test Property');
+      expect(res.body.data.property.title.en).toBe('CRUD Test Property');
     });
 
     it('should allow owner to update their property', async () => {

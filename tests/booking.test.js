@@ -48,6 +48,17 @@ beforeEach(async () => {
   });
 
   propertyId = prop._id.toString();
+
+  // Create an approved viewing request for the buyer to bypass the viewing-gated booking constraint
+  const ViewingRequest = require('../src/models/viewingRequest.model');
+  await ViewingRequest.create({
+    requester: buyer.user._id,
+    property: prop._id,
+    owner: owner.user._id,
+    status: 'approved',
+    preferredDate: new Date(),
+    preferredTime: '10:00 AM'
+  });
 });
 
 afterAll(async () => {

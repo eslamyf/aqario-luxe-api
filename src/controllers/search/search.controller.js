@@ -28,8 +28,24 @@ exports.advancedSearch = asyncHandler(async (req, res) => {
 
   if (type)        filter.type        = type;
   if (listingType) filter.listingType = listingType;
-  if (city)        filter['location.city']     = city; // Exact match is more efficient
-  if (district)    filter['location.district'] = district; // Exact match is more efficient
+  if (city) {
+    if (!filter.$and) filter.$and = [];
+    filter.$and.push({
+      $or: [
+        { 'location.city.en': city },
+        { 'location.city.ar': city }
+      ]
+    });
+  }
+  if (district) {
+    if (!filter.$and) filter.$and = [];
+    filter.$and.push({
+      $or: [
+        { 'location.district.en': district },
+        { 'location.district.ar': district }
+      ]
+    });
+  }
   if (bedrooms)    filter.bedrooms  = { $gte: Number(bedrooms) };
   if (bathrooms)   filter.bathrooms = { $gte: Number(bathrooms) };
   if (minRating)   filter.avgRating = { $gte: Number(minRating) };
@@ -134,7 +150,10 @@ exports.getSimilarProperties = asyncHandler(async (req, res, next) => {
     _id:         { $ne: property._id },
     type:        property.type,
     listingType: property.listingType,
-    'location.city': property.location?.city,
+    $or: [
+      { 'location.city.en': property.location?.city?.en },
+      { 'location.city.ar': property.location?.city?.ar }
+    ],
     isApproved:  true,
     status:      'available',
     price:       { $gte: property.price * 0.7, $lte: property.price * 1.3 },

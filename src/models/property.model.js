@@ -1,18 +1,63 @@
 const mongoose = require('mongoose');
 
+const BilingualTitleSchema = new mongoose.Schema({
+  en: {
+    type: String,
+    required: [true, 'VALIDATION.TITLE_REQUIRED'],
+    trim: true,
+    minlength: [10, 'VALIDATION.TITLE_LENGTH'],
+    maxlength: [100, 'VALIDATION.TITLE_MAX'],
+  },
+  ar: {
+    type: String,
+    required: [true, 'VALIDATION.TITLE_REQUIRED'],
+    trim: true,
+    minlength: [10, 'VALIDATION.TITLE_LENGTH'],
+    maxlength: [100, 'VALIDATION.TITLE_MAX'],
+  }
+}, { _id: false });
+
+const BilingualDescriptionSchema = new mongoose.Schema({
+  en: {
+    type: String,
+    required: [true, 'VALIDATION.DESCRIPTION_REQUIRED'],
+    minlength: [20, 'VALIDATION.DESCRIPTION_MIN'],
+  },
+  ar: {
+    type: String,
+    required: [true, 'VALIDATION.DESCRIPTION_REQUIRED'],
+    minlength: [20, 'VALIDATION.DESCRIPTION_MIN'],
+  }
+}, { _id: false });
+
+const BilingualCitySchema = new mongoose.Schema({
+  en: { type: String, required: [true, 'VALIDATION.CITY_REQUIRED'] },
+  ar: { type: String, required: [true, 'VALIDATION.CITY_REQUIRED'] }
+}, { _id: false });
+
+const BilingualDistrictSchema = new mongoose.Schema({
+  en: { type: String, required: [true, 'VALIDATION.DISTRICT_REQUIRED'] },
+  ar: { type: String, required: [true, 'VALIDATION.DISTRICT_REQUIRED'] }
+}, { _id: false });
+
+const bilingualSetter = function(val) {
+  if (typeof val === 'string') {
+    return { en: val, ar: val };
+  }
+  return val;
+};
+
 const propertySchema = new mongoose.Schema(
   {
     title: {
-      type: String,
+      type: BilingualTitleSchema,
       required: [true, 'VALIDATION.TITLE_REQUIRED'],
-      trim: true,
-      minlength: [10, 'VALIDATION.TITLE_LENGTH'],
-      maxlength: [100, 'VALIDATION.TITLE_MAX'],
+      set: bilingualSetter
     },
     description: {
-      type: String,
+      type: BilingualDescriptionSchema,
       required: [true, 'VALIDATION.DESCRIPTION_REQUIRED'],
-      minlength: [20, 'VALIDATION.DESCRIPTION_MIN'],
+      set: bilingualSetter
     },
     price: {
       type: Number,
@@ -44,9 +89,21 @@ const propertySchema = new mongoose.Schema(
       default: 'available',
     },
     location: {
-      city:     { type: String, required: [true, 'VALIDATION.CITY_REQUIRED'] },
-      district: { type: String, required: [true, 'VALIDATION.DISTRICT_REQUIRED'] },
+      city: {
+        type: BilingualCitySchema,
+        required: [true, 'VALIDATION.CITY_REQUIRED'],
+        set: bilingualSetter
+      },
+      district: {
+        type: BilingualDistrictSchema,
+        required: [true, 'VALIDATION.DISTRICT_REQUIRED'],
+        set: bilingualSetter
+      },
       street:   { type: String },
+    },
+    slug: {
+      en: { type: String, unique: true, sparse: true, index: true },
+      ar: { type: String, unique: true, sparse: true, index: true }
     },
     area:      { type: Number, min: [0, 'VALIDATION.AREA_MIN'] },
     bedrooms:  { type: Number, default: 0, min: 0 },
@@ -105,8 +162,26 @@ propertySchema.index({ price: 1, type: 1, listingType: 1 });
 
 // Text Index for full-text search engine
 propertySchema.index(
-  { title: 'text', description: 'text', 'location.city': 'text', 'location.district': 'text' },
-  { weights: { title: 10, description: 5, 'location.city': 5, 'location.district': 1 } }
+  {
+    'title.en': 'text',
+    'title.ar': 'text',
+    'description.en': 'text',
+    'description.ar': 'text',
+    'location.city.en': 'text',
+    'location.city.ar': 'text',
+    'location.district.en': 'text',
+    'location.district.ar': 'text'
+  },
+  {
+    weights: {
+      'title.en': 10,
+      'title.ar': 10,
+      'location.city.en': 5,
+      'location.city.ar': 5,
+      'description.en': 1,
+      'description.ar': 1
+    }
+  }
 );
 
 // Virtual populate for reviews
@@ -119,6 +194,48 @@ propertySchema.virtual('reviews', {
 // FIX #5 — badge virtual: derived from listingType so frontend gets it automatically
 propertySchema.virtual('badge').get(function () {
   return this.listingType === 'rent' ? 'For Rent' : 'For Sale';
+});
+
+// Helper: dynamic slugification for both LTR and RTL strings
+function slugify(text) {
+  if (!text) return '';
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\s\-\u0600-\u06FF]+/g, '')
+    .replace(/[\s\_]+/g, '-')
+    .replace(/\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+}
+
+
+
+// Pre-save Mongoose hook to ensure bilingual unique SEO slugs
+propertySchema.pre('save', async function () {
+  if (this.title?.en && (this.isModified('title.en') || !this.slug?.en)) {
+    let baseSlug = slugify(this.title.en);
+    let uniqueSlug = baseSlug;
+    let counter = 1;
+    while (await mongoose.models.Property.findOne({ 'slug.en': uniqueSlug, _id: { $ne: this._id } })) {
+      uniqueSlug = `${baseSlug}-${counter++}`;
+    }
+    this.slug = this.slug || {};
+    this.slug.en = uniqueSlug;
+  }
+
+  if (this.title?.ar && (this.isModified('title.ar') || !this.slug?.ar)) {
+    let baseSlug = slugify(this.title.ar);
+    let uniqueSlug = baseSlug;
+    let counter = 1;
+    while (await mongoose.models.Property.findOne({ 'slug.ar': uniqueSlug, _id: { $ne: this._id } })) {
+      uniqueSlug = `${baseSlug}-${counter++}`;
+    }
+    this.slug = this.slug || {};
+    this.slug.ar = uniqueSlug;
+  }
 });
 
 module.exports = mongoose.model('Property', propertySchema);

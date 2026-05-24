@@ -103,12 +103,15 @@ describe('Property Management', () => {
       .post('/api/v1/properties')
       .set('Authorization', `Bearer ${ownerToken}`)
       .send({
-        title:       'Beautiful Apartment in Downtown',
-        description: 'A spacious 3-bedroom apartment with modern amenities',
+        title:       { en: 'Beautiful Apartment in Downtown', ar: 'شقة جميلة في وسط البلد' },
+        description: { en: 'A spacious 3-bedroom apartment with modern amenities', ar: 'شقة واسعة من 3 غرف نوم مع وسائل الراحة الحديثة' },
         price:       250_000,
         type:        'apartment',
         listingType: 'sale',
-        location:    { city: 'Cairo', district: 'Zamalek' },
+        location:    {
+          city: { en: 'Cairo', ar: 'القاهرة' },
+          district: { en: 'Zamalek', ar: 'الزمالك' }
+        },
         bedrooms:    3,
         bathrooms:   2,
         area:        150,
@@ -125,7 +128,7 @@ describe('Property Management', () => {
       .set('Authorization', `Bearer ${ownerToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data.property.title).toBe('Beautiful Apartment in Downtown');
+    expect(res.body.data.property.title.en).toBe('Beautiful Apartment in Downtown');
   });
 
   it('should allow owner to update their property price', async () => {

@@ -45,11 +45,16 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
   // ── Remap frontend query params → correct Mongoose field paths ─────────────
   const rawQuery = { ...req.query };
 
-  // city → location.city (nested field in schema)
+  // city → location.city.en or location.city.ar (nested fields in schema)
   if (rawQuery.city) {
     // Prevent Regex injection (ReDoS)
     const escapedCity = rawQuery.city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    rawQuery['location.city'] = new RegExp(escapedCity, 'i');
+    const cityRegex = new RegExp(escapedCity, 'i');
+    if (!rawQuery.$or) rawQuery.$or = [];
+    rawQuery.$or.push(
+      { 'location.city.en': cityRegex },
+      { 'location.city.ar': cityRegex }
+    );
     delete rawQuery.city;
   }
 

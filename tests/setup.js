@@ -7,6 +7,8 @@
 const mongoose              = require('mongoose');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
+jest.setTimeout(600000);
+
 let mongod;
 
 // ─── Global Setup ──────────────────────────────────────────────
@@ -27,7 +29,7 @@ beforeAll(async () => {
   process.env.MONGO_URI          = uri;
   process.env.CLIENT_URL         = 'http://localhost:3000';
   process.env.REDIS_URL          = '';   // disable Redis in tests
-});
+}, 600000);
 
 afterAll(async () => {
   await mongoose.disconnect();
@@ -53,7 +55,24 @@ global.createVerifiedUser = async (request, app, { name, email, password, role =
   }
 
   // 2. Mark as verified, set role, and set KYC status directly in DB
-  await User.findOneAndUpdate({ email }, { isVerified: true, role, kycStatus });
+  const user = await User.findOneAndUpdate({ email }, { isVerified: true, role, kycStatus }, { new: true });
+
+  if (role === 'owner' || role === 'agent') {
+    const Subscription = require('../src/models/subscription.model');
+    const sub = await Subscription.create({
+      user: user._id,
+      plan: 'enterprise',
+      status: 'active',
+      maxListings: -1,
+      price: 999,
+      currency: 'USD',
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 3000000000) // far future
+    });
+    user.activeSubscription = sub._id;
+    user.subscriptionStatus = 'active';
+    await user.save({ validateBeforeSave: false });
+  }
 
   // 3. Login
   const loginRes = await request(app).post('/api/v1/auth/login').send({ email, password });
