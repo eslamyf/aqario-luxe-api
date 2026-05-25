@@ -213,6 +213,7 @@
     "CITY_EMPTY": "City cannot be empty",
     "DISTRICT_EMPTY": "District cannot be empty",
     "AREA_MIN": "Area cannot be negative",
+    "ROOMS_MIN": "Number of rooms cannot be negative",
     "BEDROOMS_MIN": "Number of bedrooms cannot be negative",
     "BATHROOMS_MIN": "Number of bathrooms cannot be negative",
     "START_DATE_REQUIRED": "Start date is required",

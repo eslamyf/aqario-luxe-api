@@ -27,6 +27,7 @@ exports.createPropertySchema = [
   body('location.district.en').notEmpty().withMessage(t('VALIDATION.DISTRICT_REQUIRED')),
   body('location.district.ar').notEmpty().withMessage(t('VALIDATION.DISTRICT_REQUIRED')),
   body('area').optional().isFloat({ min: 0 }).withMessage(t('VALIDATION.AREA_MIN')),
+  body('rooms').optional().isInt({ min: 0 }).withMessage(t('VALIDATION.ROOMS_MIN')),
   body('bedrooms').optional().isInt({ min: 0 }).withMessage(t('VALIDATION.BEDROOMS_MIN')),
   body('bathrooms').optional().isInt({ min: 0 }).withMessage(t('VALIDATION.BATHROOMS_MIN')),
   // FIX #5 — features is now a schema field
@@ -51,6 +52,7 @@ exports.updatePropertySchema = [
   body('location.district.en').optional().notEmpty().withMessage(t('VALIDATION.DISTRICT_EMPTY')),
   body('location.district.ar').optional().notEmpty().withMessage(t('VALIDATION.DISTRICT_EMPTY')),
   body('area').optional().isFloat({ min: 0 }).withMessage(t('VALIDATION.AREA_MIN')),
+  body('rooms').optional().isInt({ min: 0 }).withMessage(t('VALIDATION.ROOMS_MIN')),
   body('bedrooms').optional().isInt({ min: 0 }).withMessage(t('VALIDATION.BEDROOMS_MIN')),
   body('bathrooms').optional().isInt({ min: 0 }).withMessage(t('VALIDATION.BATHROOMS_MIN')),
   // FIX #5 — features

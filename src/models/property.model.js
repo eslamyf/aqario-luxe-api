@@ -106,6 +106,7 @@ const propertySchema = new mongoose.Schema(
       ar: { type: String, unique: true, sparse: true, index: true }
     },
     area:      { type: Number, min: [0, 'VALIDATION.AREA_MIN'] },
+    rooms:     { type: Number, default: 0, min: 0 },
     bedrooms:  { type: Number, default: 0, min: 0 },
     bathrooms: { type: Number, default: 0, min: 0 },
     images:    { type: [String], default: [] },
