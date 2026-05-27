@@ -98,7 +98,7 @@ exports.adminActivity = asyncHandler(async (req, res) => {
               _id: 0,
               entityId: '$_id',
               type: 'NEW_LISTING',
-              message: { $concat: ['New property listed: ', '$title'] },
+              message: { $concat: ['New property listed: ', '$title.en'] },
               createdAt: 1,
               colorCode: 'purple'
             }
@@ -130,8 +130,8 @@ exports.adminActivity = asyncHandler(async (req, res) => {
               type: 'NEW_BOOKING',
               message: { 
                 $cond: {
-                  if: { $gt: [{ $strLenCP: { $ifNull: ['$property.title', ''] } }, 0] },
-                  then: { $concat: ['New booking for: ', '$property.title'] },
+                  if: { $gt: [{ $strLenCP: { $ifNull: ['$property.title.en', ''] } }, 0] },
+                  then: { $concat: ['New booking for: ', '$property.title.en'] },
                   else: 'New booking reservation created.'
                 }
               },
@@ -221,7 +221,7 @@ exports.recentBookings = asyncHandler(async (req, res) => {
     // Find matching users and properties to get their IDs
     const [users, properties] = await Promise.all([
       User.find({ $or: [{ name: searchRegex }, { email: searchRegex }] }).select('_id'),
-      Property.find({ title: searchRegex }).select('_id')
+      Property.find({ $or: [{ 'title.en': searchRegex }, { 'title.ar': searchRegex }] }).select('_id')
     ]);
 
     const userIds = users.map(u => u._id);
@@ -315,7 +315,8 @@ exports.recentProperties = asyncHandler(async (req, res) => {
     const ownerIds = matchingUsers.map(u => u._id);
 
     filter.$or = [
-      { title: searchRegex },
+      { 'title.en': searchRegex },
+      { 'title.ar': searchRegex },
       { owner: { $in: ownerIds } }
     ];
   }

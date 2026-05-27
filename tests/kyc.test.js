@@ -87,7 +87,7 @@ describe('POST /api/v1/kyc — Submit KYC Documents', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.status).toBe('fail');
-    expect(res.body.message).toMatch(/invalid document type/i);
+    expect(res.body.message).toMatch(/KYC\.INVALID_DOC_TYPE/i);
   });
 
   it('should reject missing frontImage with 400', async () => {
@@ -97,7 +97,7 @@ describe('POST /api/v1/kyc — Submit KYC Documents', () => {
       .send({ documentType: 'national_id' });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/frontImage/i);
+    expect(res.body.message).toMatch(/KYC\.FRONT_IMAGE_REQUIRED/i);
   });
 
   it('should reject unauthenticated request with 401', async () => {

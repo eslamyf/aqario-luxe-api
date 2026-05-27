@@ -98,7 +98,7 @@ beforeAll(async () => {
     totalAmount:   512_500,
     currency:      'EGP',
     paymentMethod: 'paymob',
-    status:        'completed',
+    status:        'paid',
     isVerified:    true,
     expiresAt:     new Date(Date.now() + 30 * 60_000),
   });
@@ -117,7 +117,7 @@ describe('POST /api/v1/webhook/paymob — Valid Signature', () => {
     // Mock PaymentService so we don't need full provider setup
     const paymentService = require('../src/services/PaymentService');
     jest.spyOn(paymentService, 'verifyPayment').mockResolvedValueOnce({
-      payment: { _id: paymentId, status: 'completed' },
+      payment: { _id: paymentId, status: 'paid' },
     });
 
     const payload = {
@@ -269,7 +269,7 @@ describe('POST /api/v1/webhook/paymob — No Signature Header', () => {
     // We hardened this to ALWAYS require a signature
     const paymentService = require('../src/services/PaymentService');
     jest.spyOn(paymentService, 'verifyPayment').mockResolvedValueOnce({
-      payment: { _id: paymentId, status: 'completed' },
+      payment: { _id: paymentId, status: 'paid' },
     });
 
     const payload = {

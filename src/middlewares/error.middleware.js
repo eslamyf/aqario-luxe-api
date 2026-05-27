@@ -20,34 +20,34 @@ module.exports = (err, req, res, next) => {
 
   // Mongoose CastError
   if (err.name === 'CastError') {
-    return res.status(400).json({ status: 'fail', message: t('ERRORS.CAST_ERROR', { path: err.path }), requestId });
+    return res.status(400).json({ status: 'fail', message: 'ERRORS.CAST_ERROR', path: err.path, requestId });
   }
 
   // Mongo duplicate key
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue || {})[0] || 'field';
-    return res.status(400).json({ status: 'fail', message: t('ERRORS.DUPLICATE_KEY', { field }), requestId });
+    return res.status(400).json({ status: 'fail', message: 'ERRORS.DUPLICATE_KEY', field, requestId });
   }
 
   // Mongoose ValidationError
   if (err.name === 'ValidationError') {
     const errors = Object.values(err.errors).map((e) => e.message);
-    return res.status(400).json({ status: 'fail', message: t('COMMON.VALIDATION_FAILED'), errors, requestId });
+    return res.status(400).json({ status: 'fail', message: 'COMMON.VALIDATION_FAILED', errors, requestId });
   }
 
   // JWT errors
-  if (err.name === 'JsonWebTokenError') return res.status(401).json({ status: 'fail', message: t('COMMON.INVALID_TOKEN'), requestId });
-  if (err.name === 'TokenExpiredError') return res.status(401).json({ status: 'fail', message: t('COMMON.TOKEN_EXPIRED'), requestId });
+  if (err.name === 'JsonWebTokenError') return res.status(401).json({ status: 'fail', message: 'COMMON.INVALID_TOKEN', requestId });
+  if (err.name === 'TokenExpiredError') return res.status(401).json({ status: 'fail', message: 'COMMON.TOKEN_EXPIRED', requestId });
 
   // Multer file upload errors
-  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ status: 'fail', message: t('ERRORS.FILE_TOO_LARGE'), requestId });
-  if (err.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ status: 'fail', message: t('ERRORS.TOO_MANY_FILES'), requestId });
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ status: 'fail', message: 'ERRORS.FILE_TOO_LARGE', requestId });
+  if (err.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ status: 'fail', message: 'ERRORS.TOO_MANY_FILES', requestId });
 
   // Fallback for unhandled errors
   const isDev = process.env.NODE_ENV !== 'production';
   res.status(500).json({
     status: 'error',
-    message: isDev ? err.message : t('COMMON.INTERNAL_ERROR'),
+    message: isDev ? err.message : 'COMMON.INTERNAL_ERROR',
     requestId,
     ...(isDev && { stack: err.stack }),
   });

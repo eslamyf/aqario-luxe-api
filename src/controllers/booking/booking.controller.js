@@ -262,7 +262,7 @@ exports.exportBookings = async (req, res, next) => {
       
       const [users, properties] = await Promise.all([
         User.find({ $or: [{ name: searchRegex }, { email: searchRegex }] }).select('_id'),
-        Property.find({ title: searchRegex }).select('_id')
+        Property.find({ $or: [{ 'title.en': searchRegex }, { 'title.ar': searchRegex }] }).select('_id')
       ]);
       filter.$or = [
         { user_id: { $in: users.map(u => u._id) } },
@@ -278,7 +278,10 @@ exports.exportBookings = async (req, res, next) => {
 
     let csv = 'Booking ID,Client,Email,Property,Amount,Status,Date\n';
     bookings.forEach(b => {
-      csv += `${b._id},${b.user_id?.name || 'N/A'},${b.user_id?.email || 'N/A'},${b.property_id?.title || 'N/A'},${b.amount},${b.status},${b.created_at?.toISOString() || 'N/A'}\n`;
+      const titleStr = b.property_id?.title
+        ? (b.property_id.title.en || b.property_id.title.ar || 'N/A')
+        : 'N/A';
+      csv += `${b._id},${b.user_id?.name || 'N/A'},${b.user_id?.email || 'N/A'},${titleStr},${b.amount},${b.status},${b.created_at?.toISOString() || 'N/A'}\n`;
     });
 
     res.setHeader('Content-Type', 'text/csv');

@@ -9,7 +9,7 @@ const validate = (schema, source = 'body') => {
         if (!errors.isEmpty()) {
           return res.status(400).json({
             status:  'fail',
-            message: req.t('COMMON.VALIDATION_DATA_ERROR'),
+            message: 'COMMON.VALIDATION_DATA_ERROR',
             errors:  errors.array().map((e) => e.msg),
           });
         }
@@ -22,7 +22,7 @@ const validate = (schema, source = 'body') => {
     if (error) {
       return res.status(400).json({
         status:  'fail',
-        message: req.t('COMMON.VALIDATION_DATA_ERROR'),
+        message: 'COMMON.VALIDATION_DATA_ERROR',
         errors:  error.details.map((e) => e.message.replace(/"/g, '')),
       });
     }

@@ -104,7 +104,7 @@ beforeAll(async () => {
     totalAmount:   512_500,
     currency:      'USD',
     paymentMethod: 'paypal',
-    status:        'completed',
+    status:        'paid',
     isVerified:    true,
     expiresAt:     new Date(Date.now() + 30 * 60_000),
   });
@@ -121,7 +121,7 @@ afterAll(async () => {
 describe('POST /api/v1/webhook/paypal', () => {
   it('should accept valid signature and process payment', async () => {
     const paymentService = require('../src/services/PaymentService');
-    jest.spyOn(paymentService, 'verifyPayment').mockResolvedValueOnce({ status: 'completed' });
+    jest.spyOn(paymentService, 'verifyPayment').mockResolvedValueOnce({ status: 'paid' });
 
     const payload = { event_type: 'PAYMENT.SALE.COMPLETED', resource: { custom_id: paymentId } };
     const tId     = 'TEST_TRANS_ID';

@@ -45,10 +45,10 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
   // ── Remap frontend query params → correct Mongoose field paths ─────────────
   const rawQuery = { ...req.query };
 
-  // city → location.city.en or location.city.ar (nested fields in schema)
-  if (rawQuery.city) {
-    // Prevent Regex injection (ReDoS)
-    const escapedCity = rawQuery.city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // city/location.city → location.city.en or location.city.ar (nested fields in schema)
+  const cityVal = rawQuery.city || rawQuery['location.city'];
+  if (cityVal) {
+    const escapedCity = String(cityVal).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const cityRegex = new RegExp(escapedCity, 'i');
     if (!rawQuery.$or) rawQuery.$or = [];
     rawQuery.$or.push(
@@ -56,6 +56,34 @@ exports.getAllProperties = asyncHandler(async (req, res) => {
       { 'location.city.ar': cityRegex }
     );
     delete rawQuery.city;
+    delete rawQuery['location.city'];
+  }
+
+  // district/location.district → location.district.en or location.district.ar
+  const districtVal = rawQuery.district || rawQuery['location.district'];
+  if (districtVal) {
+    const escapedDistrict = String(districtVal).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const districtRegex = new RegExp(escapedDistrict, 'i');
+    if (!rawQuery.$or) rawQuery.$or = [];
+    rawQuery.$or.push(
+      { 'location.district.en': districtRegex },
+      { 'location.district.ar': districtRegex }
+    );
+    delete rawQuery.district;
+    delete rawQuery['location.district'];
+  }
+
+  // title → title.en or title.ar
+  const titleVal = rawQuery.title;
+  if (titleVal) {
+    const escapedTitle = String(titleVal).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const titleRegex = new RegExp(escapedTitle, 'i');
+    if (!rawQuery.$or) rawQuery.$or = [];
+    rawQuery.$or.push(
+      { 'title.en': titleRegex },
+      { 'title.ar': titleRegex }
+    );
+    delete rawQuery.title;
   }
 
   // minPrice / maxPrice → price range operators

@@ -25,7 +25,14 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
   if (!VALID_TYPES.includes(documentType)) {
     return res.status(400).json({
       status: 'fail',
-      message: req.t('KYC.INVALID_DOC_TYPE', { types: VALID_TYPES.join(', ') }),
+      message: 'KYC.INVALID_DOC_TYPE',
+    });
+  }
+
+  if (!frontImage) {
+    return res.status(400).json({
+      status: 'fail',
+      message: 'KYC.FRONT_IMAGE_REQUIRED',
     });
   }
 
@@ -256,6 +263,13 @@ exports.getMyKYC = asyncHandler(async (req, res) => {
     return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   }
 
+  // Don't expose image URLs in documents (security)
+  const documents = user.kycDocuments.map(doc => ({
+    _id: doc._id,
+    type: doc.type,
+    uploadedAt: doc.uploadedAt,
+  }));
+
   res.status(200).json({
     status: 'success',
     data: {
@@ -267,7 +281,7 @@ exports.getMyKYC = asyncHandler(async (req, res) => {
       kycInfo: {
         status: user.kycStatus,
         documentcount: user.kycDocuments.length,
-        documents: user.kycDocuments,
+        documents,
         ownershipDocuments: user.ownershipDocuments,
         version: user.kycVersion,
         submittedAt: user.kycSubmittedAt,

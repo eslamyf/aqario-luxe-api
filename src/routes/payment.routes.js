@@ -3,6 +3,7 @@ const router = express.Router();
 const paymentController = require('../controllers/payment.controller');
 const webhookController = require('../controllers/webhook.controller');
 const { protect } = require('../middlewares/auth.middleware');
+const { requireKYC } = require('../middlewares/kyc.middleware');
 const restrictTo = require('../middlewares/restrictTo.middleware');
 const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 
@@ -40,6 +41,7 @@ const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware
 router.post(
   '/checkout',
   protect,
+  requireKYC,
   idempotencyMiddleware,
   paymentController.initiatePayment
 );
@@ -47,6 +49,7 @@ router.post(
 router.post(
   '/promotion-checkout',
   protect,
+  requireKYC,
   paymentController.initiatePromotion
 );
 

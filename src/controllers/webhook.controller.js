@@ -139,12 +139,12 @@ exports.handlePaymobWebhook = asyncHandler(async (req, res, next) => {
     isPromotion = true;
   }
 
-  if (!payment) return next(new AppError('Transaction not found', 404));
+  if (!payment) return next(new AppError('Payment not found', 404));
 
   // Idempotency: already processed
   if (payment.status === 'paid' || payment.isVerified) {
     logger.info(`[Webhook/Paymob] Already processed (idempotent): ${paymentId}`);
-    return res.status(200).json({ status: 'success', message: 'Payment already processed' });
+    return res.status(200).json({ status: 'success', message: 'Payment already verified', duplicate: true });
   }
 
   let result;
@@ -196,12 +196,12 @@ exports.handlePaypalWebhook = asyncHandler(async (req, res, next) => {
     isPromotion = true;
   }
 
-  if (!payment) return next(new AppError('Transaction not found', 404));
+  if (!payment) return next(new AppError('Payment not found', 404));
 
   // Idempotency guard
   if (payment.status === 'paid' || payment.isVerified) {
     logger.info(`[Webhook/PayPal] Already processed (idempotent): ${customId}`);
-    return res.status(200).json({ status: 'success', message: 'Payment already processed' });
+    return res.status(200).json({ status: 'success', message: 'Payment already verified', duplicate: true });
   }
 
   let result;

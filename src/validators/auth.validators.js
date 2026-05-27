@@ -1,8 +1,8 @@
 const { body } = require('express-validator');
 const i18next = require('../config/i18n').i18next;
 
-// Helper: returns a function that resolves translation at validation-time
-const t = (key) => (value, { req }) => req.t(key);
+// Helper: returns the translation key directly
+const t = (key) => key;
 
 exports.registerSchema = [
   body('name').notEmpty().withMessage(t('VALIDATION.NAME_REQUIRED'))

@@ -1,6 +1,6 @@
 const { body } = require('express-validator');
 
-const t = (key) => (value, { req }) => req.t(key);
+const t = (key) => key;
 
 exports.sendInquirySchema = [
   body('propertyId').notEmpty().withMessage(t('VALIDATION.PROPERTY_ID_REQUIRED')).isMongoId().withMessage(t('VALIDATION.PROPERTY_ID_INVALID')),

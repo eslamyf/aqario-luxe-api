@@ -137,6 +137,7 @@ router.use(restrictTo('admin'));
  *         description: Admin access required
  */
 router.get('/list', kycController.getKYCList);
+router.get('/pending', kycController.getKYCList);
 
 /**
  * @swagger

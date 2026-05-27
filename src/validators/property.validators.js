@@ -1,7 +1,7 @@
 const { body } = require('express-validator');
 
-// Helper: deferred translation at validation-time
-const t = (key) => (value, { req }) => req.t(key);
+// Helper: returns the translation key directly
+const t = (key) => key;
 
 // ─── Create Property ──────────────────────────────────────────
 exports.createPropertySchema = [
