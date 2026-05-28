@@ -162,4 +162,64 @@ describe('Auth Routes', () => {
     });
   });
 
+  // ── Admin Export Users Excel ─────────────────────────────────
+  describe('GET /api/v1/dashboard/admin/users/export', () => {
+    it('should allow admins to export users to Excel (.xlsx)', async () => {
+      const { token } = await createVerifiedUser(request, app, {
+        name: 'Admin User', email: 'admin-export@example.com', password: 'Test@1234', role: 'admin',
+      });
+
+      // Create a couple of additional users to export
+      await User.create({ name: 'Buyer 1', email: 'buyer1@example.com', password: 'password123', role: 'buyer', isVerified: true });
+      await User.create({ name: 'Owner 1', email: 'owner1@example.com', password: 'password123', role: 'owner', isVerified: true });
+
+      const res = await request(app)
+        .get('/api/v1/dashboard/admin/users/export')
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true)
+        .parse((res, callback) => {
+          res.setEncoding('binary');
+          let data = '';
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => { callback(null, Buffer.from(data, 'binary')); });
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      expect(res.headers['content-disposition']).toContain('attachment; filename=users-export-');
+
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.body);
+      const worksheet = workbook.getWorksheet('Users');
+      expect(worksheet).toBeDefined();
+
+      const headerRow = worksheet.getRow(1);
+      expect(headerRow.getCell(1).value).toBe('User ID');
+      expect(headerRow.getCell(2).value).toBe('Name');
+      expect(headerRow.getCell(3).value).toBe('Email');
+
+      const names = [];
+      worksheet.eachRow((row, rowNum) => {
+        if (rowNum > 1) {
+          names.push(row.getCell(2).value);
+        }
+      });
+      expect(names).toContain('Buyer 1');
+      expect(names).toContain('Owner 1');
+    });
+
+    it('should reject non-admin users with 403', async () => {
+      const { token } = await createVerifiedUser(request, app, {
+        name: 'Normal User', email: 'buyer-export@example.com', password: 'Test@1234', role: 'buyer',
+      });
+
+      const res = await request(app)
+        .get('/api/v1/dashboard/admin/users/export')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
 });

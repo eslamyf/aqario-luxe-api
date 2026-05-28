@@ -113,6 +113,12 @@ router.get('/me', kycController.getMyKYC);
  */
 router.delete('/identity-document', kycController.deleteIdentityDocument);
 
+/**
+ * GET /api/v1/kyc/ownership/download/:userId/:docId
+ * Native forced download of an ownership document
+ */
+router.get('/ownership/download/:userId/:docId', kycController.downloadOwnershipFile);
+
 // ─── ADMIN ROUTES ──────────────────────────────────────────
 router.use(restrictTo('admin'));
 

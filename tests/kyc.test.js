@@ -55,6 +55,9 @@ describe('POST /api/v1/kyc — Submit KYC Documents', () => {
         documentType: 'national_id',
         frontImage:   'https://res.cloudinary.com/test/image/upload/v1/front.jpg',
         backImage:    'https://res.cloudinary.com/test/image/upload/v1/back.jpg',
+        nationality:  'Egyptian',
+        phoneNumber:  '+201234567890',
+        livePhoto:    'https://res.cloudinary.com/test/image/upload/v1/selfie.jpg',
       });
 
     expect(res.status).toBe(200);
@@ -70,10 +73,58 @@ describe('POST /api/v1/kyc — Submit KYC Documents', () => {
       .send({
         documentType: 'passport',
         frontImage:   'https://res.cloudinary.com/test/image/upload/v1/passport.jpg',
+        nationality:  'French',
+        phoneNumber:  '+33612345678',
+        livePhoto:    'https://res.cloudinary.com/test/image/upload/v1/selfie.jpg',
       });
 
     expect(res.status).toBe(200);
     expect(res.body.data.documentType).toBe('passport');
+  });
+
+  it('should reject missing nationality with 400', async () => {
+    const res = await request(app)
+      .post('/api/v1/kyc')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({
+        documentType: 'national_id',
+        frontImage:   'https://res.cloudinary.com/test/image/upload/v1/front.jpg',
+        phoneNumber:  '+201234567890',
+        livePhoto:    'https://res.cloudinary.com/test/image/upload/v1/selfie.jpg',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/nationality/i);
+  });
+
+  it('should reject missing phoneNumber with 400', async () => {
+    const res = await request(app)
+      .post('/api/v1/kyc')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({
+        documentType: 'national_id',
+        frontImage:   'https://res.cloudinary.com/test/image/upload/v1/front.jpg',
+        nationality:  'Egyptian',
+        livePhoto:    'https://res.cloudinary.com/test/image/upload/v1/selfie.jpg',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/phone/i);
+  });
+
+  it('should reject missing livePhoto with 400', async () => {
+    const res = await request(app)
+      .post('/api/v1/kyc')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({
+        documentType: 'national_id',
+        frontImage:   'https://res.cloudinary.com/test/image/upload/v1/front.jpg',
+        nationality:  'Egyptian',
+        phoneNumber:  '+201234567890',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/live/i);
   });
 
   it('should reject invalid documentType with 400', async () => {
@@ -334,5 +385,91 @@ describe('GET /api/v1/kyc/summary — Admin: KYC Statistics', () => {
       .set('Authorization', `Bearer ${buyerToken}`);
 
     expect(res.status).toBe(403);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 9. Ownership Document Forced Download
+// ════════════════════════════════════════════════════════════════════════════════
+describe('GET /api/v1/kyc/ownership/download/:userId/:docId — Secure Download', () => {
+  let docId;
+  const https = require('https');
+
+  beforeAll(async () => {
+    const user = await User.findById(ownerId);
+    user.isVerified = true; // Re-verify email as previous reset/reject tests set it to false
+    user.ownershipDocuments.push({
+      fileUrl: 'https://res.cloudinary.com/test/image/upload/v1/contract.pdf',
+      fileName: 'contract.pdf',
+      fileType: 'pdf',
+      isTemporary: false
+    });
+    await user.save({ validateBeforeSave: false });
+    docId = user.ownershipDocuments[0]._id.toString();
+  });
+
+  it('should allow the owner to download their own document (200)', async () => {
+    const stream = new (require('stream').PassThrough)();
+    stream.write('dummy file content');
+    stream.end();
+    stream.statusCode = 200;
+    stream.headers = {};
+
+    const spy = jest.spyOn(https, 'get').mockImplementation((url, cb) => {
+      cb(stream);
+      return { on: () => {} };
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/kyc/ownership/download/${ownerId}/${docId}`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="document.pdf"');
+    expect(res.body.toString()).toBe('dummy file content');
+
+    spy.mockRestore();
+  });
+
+  it('should allow an admin to download a user\'s document (200)', async () => {
+    const stream = new (require('stream').PassThrough)();
+    stream.write('admin downloaded content');
+    stream.end();
+    stream.statusCode = 200;
+    stream.headers = {};
+
+    const spy = jest.spyOn(https, 'get').mockImplementation((url, cb) => {
+      cb(stream);
+      return { on: () => {} };
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/kyc/ownership/download/${ownerId}/${docId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.toString()).toBe('admin downloaded content');
+
+    spy.mockRestore();
+  });
+
+  it('should deny unauthorized users with 403', async () => {
+    const res = await request(app)
+      .get(`/api/v1/kyc/ownership/download/${ownerId}/${docId}`)
+      .set('Authorization', `Bearer ${buyerToken}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/permission/i);
+  });
+
+  it('should return 404 for invalid document ID', async () => {
+    const fakeDocId = new mongoose.Types.ObjectId().toString();
+    const res = await request(app)
+      .get(`/api/v1/kyc/ownership/download/${ownerId}/${fakeDocId}`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toMatch(/not found/i);
   });
 });

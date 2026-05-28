@@ -263,6 +263,8 @@
     "NEW_REVIEW": "New rating on your property",
     "NEW_REVIEW_MSG": "{{name}} rated your property \"{{property}}\" with {{rating}} stars",
     "REPORT_REVIEWED": "Your report has been reviewed",
-    "REPORT_REVIEWED_MSG": "Your report has been {{status}}"
+    "REPORT_REVIEWED_MSG": "Your report has been {{status}}",
+    "NEW_KYC_SUBMISSION": "New KYC Submission",
+    "NEW_KYC_SUBMISSION_MSG": "User \"{{name}}\" has submitted their KYC verification documents."
   }
 }

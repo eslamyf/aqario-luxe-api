@@ -148,4 +148,56 @@ describe('Booking Routes', () => {
     });
   });
 
+  // ── Admin Export Bookings Excel ──────────────────────────────
+  describe('GET /api/v1/bookings/admin/export', () => {
+    it('should allow admins to export bookings to Excel (.xlsx)', async () => {
+      const admin = await createVerifiedUser(request, app, {
+        name: 'Admin User', email: 'admin-booking-export@example.com', password: 'Test@1234', role: 'admin',
+      });
+
+      const start = new Date(Date.now() + 7*24*60*60*1000).toISOString();
+      const end   = new Date(Date.now() + 14*24*60*60*1000).toISOString();
+      const bookingRes = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .send({ propertyId, amount: 10000, start_date: start, end_date: end });
+      
+      expect(bookingRes.status).toBe(201);
+
+      const res = await request(app)
+        .get('/api/v1/bookings/admin/export')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .buffer(true)
+        .parse((res, callback) => {
+          res.setEncoding('binary');
+          let data = '';
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => { callback(null, Buffer.from(data, 'binary')); });
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      expect(res.headers['content-disposition']).toContain('attachment; filename=bookings-export-');
+
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.body);
+      const worksheet = workbook.getWorksheet('Bookings');
+      expect(worksheet).toBeDefined();
+
+      const headerRow = worksheet.getRow(1);
+      expect(headerRow.getCell(1).value).toBe('Booking ID');
+      expect(headerRow.getCell(2).value).toBe('Client');
+      expect(headerRow.getCell(4).value).toBe('Property');
+    });
+
+    it('should reject non-admin users with 403', async () => {
+      const res = await request(app)
+        .get('/api/v1/bookings/admin/export')
+        .set('Authorization', `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
 });

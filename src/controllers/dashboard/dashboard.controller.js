@@ -7,6 +7,7 @@ const Favorite  = require('../../models/favorite.model');
 const Inquiry   = require('../../models/inquiry.model');
 const Review    = require('../../models/review.model');
 const Subscription = require('../../models/subscription.model');
+const ExcelJS = require('exceljs');
 const { PAYMENT_STATUS, SUBSCRIPTION_STATUS } = require('../../utils/constants');
 const { logAction, getAuditLogs: fetchAuditLogs } = require('../../services/audit.service');
 const asyncHandler = require('../../utils/asyncHandler');
@@ -82,6 +83,7 @@ exports.adminActivity = asyncHandler(async (req, res) => {
         entityId: '$_id',
         type: 'USER_REGISTERED',
         message: { $concat: ['New user registered: ', '$name'] },
+        messageAr: { $concat: ['تم تسجيل مستخدم جديد: ', '$name'] },
         createdAt: 1,
         colorCode: 'blue'
       }
@@ -99,6 +101,7 @@ exports.adminActivity = asyncHandler(async (req, res) => {
               entityId: '$_id',
               type: 'NEW_LISTING',
               message: { $concat: ['New property listed: ', '$title.en'] },
+              messageAr: { $concat: ['تم إدراج عقار جديد: ', { $ifNull: ['$title.ar', '$title.en'] }] },
               createdAt: 1,
               colorCode: 'purple'
             }
@@ -133,6 +136,13 @@ exports.adminActivity = asyncHandler(async (req, res) => {
                   if: { $gt: [{ $strLenCP: { $ifNull: ['$property.title.en', ''] } }, 0] },
                   then: { $concat: ['New booking for: ', '$property.title.en'] },
                   else: 'New booking reservation created.'
+                }
+              },
+              messageAr: {
+                $cond: {
+                  if: { $gt: [{ $strLenCP: { $ifNull: [{ $ifNull: ['$property.title.ar', '$property.title.en'] }, ''] } }, 0] },
+                  then: { $concat: ['حجز جديد لـ: ', { $ifNull: ['$property.title.ar', '$property.title.en'] }] },
+                  else: 'تم إنشاء حجز جديد.'
                 }
               },
               createdAt: '$created_at',
@@ -200,6 +210,86 @@ exports.recentUsers = asyncHandler(async (req, res) => {
     results: users.length,
     data: { users },
   });
+});
+
+// @route GET /api/v1/dashboard/admin/users/export
+exports.exportUsers = asyncHandler(async (req, res, next) => {
+  const { search, role, status } = req.query;
+  const filter = {};
+
+  if (search) {
+    const searchTerms = search.trim().split(/\s+/);
+    filter.$and = searchTerms.map(term => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return {
+        $or: [
+          { name: { $regex: escaped, $options: 'i' } },
+          { email: { $regex: escaped, $options: 'i' } }
+        ]
+      };
+    });
+  }
+
+  const validRoles = ['buyer', 'owner', 'agent', 'admin'];
+  if (role && validRoles.includes(role)) {
+    filter.role = role;
+  }
+
+  if (status === 'banned')  filter.isBanned = true;
+  if (status === 'active')  filter.isBanned = false;
+
+  const users = await User.find(filter)
+    .sort('-createdAt')
+    .lean();
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Users');
+
+  worksheet.columns = [
+    { header: 'User ID', key: '_id', width: 26 },
+    { header: 'Name', key: 'name', width: 25 },
+    { header: 'Email', key: 'email', width: 30 },
+    { header: 'Role', key: 'role', width: 15 },
+    { header: 'KYC Status', key: 'kycStatus', width: 18 },
+    { header: 'Banned', key: 'isBanned', width: 12 },
+    { header: 'Registration Date', key: 'createdAt', width: 25 }
+  ];
+
+  users.forEach(u => {
+    worksheet.addRow({
+      _id: u._id.toString(),
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      kycStatus: u.kycStatus || 'not_submitted',
+      isBanned: u.isBanned ? 'Yes' : 'No',
+      createdAt: u.createdAt ? u.createdAt.toISOString() : 'N/A'
+    });
+  });
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 24;
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1F4E78' }
+  };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber > 1) {
+      row.getCell('role').alignment = { horizontal: 'center' };
+      row.getCell('kycStatus').alignment = { horizontal: 'center' };
+      row.getCell('isBanned').alignment = { horizontal: 'center' };
+    }
+  });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename=users-export-${Date.now()}.xlsx`);
+
+  await workbook.xlsx.write(res);
+  res.end();
 });
 
 // @route GET /api/v1/dashboard/admin/bookings
@@ -584,6 +674,27 @@ exports.revenueReport = asyncHandler(async (req, res) => {
       report.push({
         _id: { year },
         totalRevenue: yearlyTotal
+      });
+    }
+  } else if (period === 'quarterly') {
+    // Last 4 quarters including current
+    const currentQuarter = Math.floor(now.getMonth() / 3) + 1; // 1 to 4
+    for (let i = 0; i < 4; i++) {
+      let q = currentQuarter - (3 - i);
+      let year = currentYear;
+      while (q <= 0) {
+        q += 4;
+        year -= 1;
+      }
+      
+      let quarterTotal = 0;
+      for (let m = (q - 1) * 3 + 1; m <= q * 3; m++) {
+        quarterTotal += revenueMap[`${year}-${m}`] || 0;
+      }
+      
+      report.push({
+        _id: { year, quarter: q },
+        totalRevenue: quarterTotal
       });
     }
   } else {

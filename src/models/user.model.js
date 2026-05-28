@@ -108,6 +108,18 @@ const userSchema = new mongoose.Schema(
       default: 'not_submitted',
       index: true,
     },
+    kycNationality: {
+      type: String,
+      required: function () { return this.kycStatus === 'pending' || this.kycStatus === 'approved'; }
+    },
+    kycPhoneNumber: {
+      type: String,
+      required: function () { return this.kycStatus === 'pending' || this.kycStatus === 'approved'; }
+    },
+    kycLivePhoto: {
+      type: String,
+      required: function () { return this.kycStatus === 'pending' || this.kycStatus === 'approved'; }
+    },
     kycDocuments: [
       {
         type: {

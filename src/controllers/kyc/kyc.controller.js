@@ -8,6 +8,7 @@ const { logAction } = require('../../services/audit.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const { getPaginationParams } = require('../../utils/paginate');
 const mongoose = require('mongoose');
+const { createNotification } = require('../../utils/notificationHelper');
 
 // ──────────────────────────────────────────────────────────
 // USER ENDPOINTS
@@ -18,7 +19,7 @@ const mongoose = require('mongoose');
  * Upload KYC documents (National ID, Passport, etc.)
  */
 exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
-  const { documentType, frontImage, backImage } = req.body;
+  const { documentType, frontImage, backImage, nationality, phoneNumber, livePhoto } = req.body;
 
   // Validate document type
   const VALID_TYPES = ['national_id', 'passport', 'drivers_license'];
@@ -34,6 +35,16 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
       status: 'fail',
       message: 'KYC.FRONT_IMAGE_REQUIRED',
     });
+  }
+
+  if (!nationality || nationality.trim() === '') {
+    return res.status(400).json({ status: 'fail', message: 'KYC.NATIONALITY_REQUIRED' });
+  }
+  if (!phoneNumber || phoneNumber.trim() === '') {
+    return res.status(400).json({ status: 'fail', message: 'KYC.PHONE_NUMBER_REQUIRED' });
+  }
+  if (!livePhoto || livePhoto.trim() === '') {
+    return res.status(400).json({ status: 'fail', message: 'KYC.LIVE_PHOTO_REQUIRED' });
   }
 
   const user = await User.findById(req.user._id);
@@ -61,9 +72,17 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
     user.kycDocuments = [];
   }
 
+  // Store new KYC fields
+  user.kycNationality = nationality;
+  user.kycPhoneNumber = phoneNumber;
+  user.kycLivePhoto = livePhoto;
+
   // Update KYC status and version
   if (user.kycDocuments.length === 0 && user.ownershipDocuments.length === 0) {
     user.kycStatus = 'not_submitted';
+    user.kycNationality = undefined;
+    user.kycPhoneNumber = undefined;
+    user.kycLivePhoto = undefined;
     user.kycSubmittedAt = undefined;
   } else {
     user.kycStatus = 'pending';
@@ -74,6 +93,23 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   logger.info(`[KYC] User ${user._id} submitted KYC (${documentType}) | ${user.ownershipDocuments.length} ownership docs → PENDING`);
+
+  // Instantly send a socket notification to all admin users upon a successful KYC submission
+  if (user.kycStatus === 'pending') {
+    try {
+      const admins = await User.find({ role: 'admin' });
+      for (const admin of admins) {
+        await createNotification(req.io, admin._id, {
+          type: 'kyc',
+          title: req.t('NOTIFICATION.NEW_KYC_SUBMISSION'),
+          message: req.t('NOTIFICATION.NEW_KYC_SUBMISSION_MSG', { name: user.name }),
+          link: '/admin/kyc'
+        });
+      }
+    } catch (notifErr) {
+      logger.error(`[KYC] Failed to send socket notification to admins: ${notifErr.message}`);
+    }
+  }
 
   res.status(200).json({
     status: 'success',
@@ -256,7 +292,7 @@ exports.getKYCStatus = asyncHandler(async (req, res) => {
  */
 exports.getMyKYC = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).select(
-    'name email photo kycStatus kycDocuments ownershipDocuments kycSubmittedAt kycVerifiedAt kycApprovedAt kycRejectionReason kycVersion'
+    'name email photo kycStatus kycDocuments kycNationality kycPhoneNumber kycLivePhoto ownershipDocuments kycSubmittedAt kycVerifiedAt kycApprovedAt kycRejectionReason kycVersion'
   );
 
   if (!user) {
@@ -280,6 +316,9 @@ exports.getMyKYC = asyncHandler(async (req, res) => {
       },
       kycInfo: {
         status: user.kycStatus,
+        nationality: user.kycNationality,
+        phoneNumber: user.kycPhoneNumber,
+        livePhoto: user.kycLivePhoto,
         documentcount: user.kycDocuments.length,
         documents,
         ownershipDocuments: user.ownershipDocuments,
@@ -326,7 +365,7 @@ exports.getKYCList = asyncHandler(async (req, res) => {
 
   const [users, total] = await Promise.all([
     User.find(filter)
-      .select('+kycSubmittedAt +kycApprovedAt name email kycStatus kycDocuments kycVersion kycAttempts ownershipDocuments kycRejectionReason createdAt')
+      .select('+kycSubmittedAt +kycApprovedAt name email kycStatus kycDocuments kycNationality kycPhoneNumber kycLivePhoto kycVersion kycAttempts ownershipDocuments kycRejectionReason createdAt')
       .skip(skip)
       .limit(limit)
       .sort('-createdAt')
@@ -639,6 +678,9 @@ exports.resetKYC = asyncHandler(async (req, res) => {
 
     user.kycStatus = 'not_submitted';
     user.kycDocuments = [];
+    user.kycNationality = undefined;
+    user.kycPhoneNumber = undefined;
+    user.kycLivePhoto = undefined;
     user.kycSubmittedAt = null;
     user.kycVerifiedAt = null;
     user.kycRejectionReason = null;
@@ -678,4 +720,90 @@ exports.resetKYC = asyncHandler(async (req, res) => {
   } finally {
     if (session) session.endSession();
   }
+});
+
+/**
+ * GET /api/v1/kyc/ownership/download/:userId/:docId
+ * Securely enforces a forced download of the ownership document using its original file format.
+ */
+exports.downloadOwnershipFile = asyncHandler(async (req, res) => {
+  const { userId, docId } = req.params;
+
+  // Enforce access control: Admin or the owner of the document
+  if (req.user.role !== 'admin' && req.user._id.toString() !== userId) {
+    return res.status(403).json({
+      status: 'fail',
+      message: 'You do not have permission to download this document',
+    });
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: 'User not found' });
+  }
+
+  const doc = user.ownershipDocuments.find(d => d._id.toString() === docId);
+  if (!doc) {
+    return res.status(404).json({ status: 'fail', message: 'Document not found' });
+  }
+
+  const fileUrl = doc.fileUrl || doc.imageUrl;
+  if (!fileUrl) {
+    return res.status(400).json({ status: 'fail', message: 'Document file URL is missing' });
+  }
+
+  // Parse original file extension from URL or original filename
+  const path = require('path');
+  const url = require('url');
+  const parsedUrl = url.parse(fileUrl);
+  let ext = path.extname(parsedUrl.pathname).toLowerCase();
+  if (!ext && doc.fileName) {
+    ext = path.extname(doc.fileName).toLowerCase();
+  }
+
+  // Map extensions to strict MIME types
+  const mimeTypes = {
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+  };
+
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+  const downloadName = `document${ext || '.bin'}`;
+
+  // Download and stream response securely from Cloudinary/storage
+  const https = require('https');
+  const http = require('http');
+  const downloadClient = fileUrl.startsWith('https') ? https : http;
+
+  const requestFile = (targetUrl) => {
+    downloadClient.get(targetUrl, (streamRes) => {
+      // Handle potential 301/302 redirects
+      if (streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
+        return requestFile(streamRes.headers.location);
+      }
+
+      if (streamRes.statusCode !== 200) {
+        return res.status(500).json({
+          status: 'fail',
+          message: `Storage server returned status code ${streamRes.statusCode}`,
+        });
+      }
+
+      // Set forced download headers
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+
+      streamRes.pipe(res);
+    }).on('error', (err) => {
+      logger.error(`[KYC] Ownership doc download error: ${err.message}`);
+      res.status(500).json({ status: 'fail', message: 'Error fetching file from storage' });
+    });
+  };
+
+  requestFile(fileUrl);
 });

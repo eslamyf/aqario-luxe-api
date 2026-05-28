@@ -63,6 +63,7 @@ router.get('/admin/activity', restrictTo('admin'), dashboardController.adminActi
  *       403: { $ref: '#/components/responses/403' }
  */
 router.get('/admin/users', restrictTo('admin'), dashboardController.recentUsers);
+router.get('/admin/users/export', restrictTo('admin'), checkPermission('export_data'), dashboardController.exportUsers);
 
 /**
  * @swagger

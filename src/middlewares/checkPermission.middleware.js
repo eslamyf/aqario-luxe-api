@@ -44,9 +44,8 @@ const checkPermission = (...requiredPermissions) => (req, res, next) => {
     return next();
   }
 
-  // Admin with no explicit permissions list = legacy full-access super admin.
-  // This ensures backwards compatibility with existing admin accounts.
-  if (user.role === 'admin' && (!user.permissions || user.permissions.length === 0)) {
+  // Admins bypass granular permission checks completely ("admin can do anything").
+  if (user.role === 'admin') {
     return next();
   }
 

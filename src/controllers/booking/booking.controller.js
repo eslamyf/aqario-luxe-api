@@ -1,5 +1,6 @@
 const Booking  = require('../../models/booking.model');
 const Property = require('../../models/property.model');
+const ExcelJS = require('exceljs');
 const { sendBookingConfirmationEmail } = require('../../services/email.service');
 const { createNotification } = require('../../utils/notificationHelper');
 const { checkViewingEligibility } = require('../../services/viewing.service');
@@ -276,17 +277,56 @@ exports.exportBookings = async (req, res, next) => {
       .sort('-created_at')
       .lean();
 
-    let csv = 'Booking ID,Client,Email,Property,Amount,Status,Date\n';
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Bookings');
+
+    worksheet.columns = [
+      { header: 'Booking ID', key: '_id', width: 26 },
+      { header: 'Client', key: 'client', width: 25 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Property', key: 'property', width: 35 },
+      { header: 'Amount', key: 'amount', width: 15 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'Date', key: 'createdAt', width: 25 }
+    ];
+
     bookings.forEach(b => {
       const titleStr = b.property_id?.title
         ? (b.property_id.title.en || b.property_id.title.ar || 'N/A')
         : 'N/A';
-      csv += `${b._id},${b.user_id?.name || 'N/A'},${b.user_id?.email || 'N/A'},${titleStr},${b.amount},${b.status},${b.created_at?.toISOString() || 'N/A'}\n`;
+      worksheet.addRow({
+        _id: b._id.toString(),
+        client: b.user_id?.name || 'N/A',
+        email: b.user_id?.email || 'N/A',
+        property: titleStr,
+        amount: b.amount,
+        status: b.status,
+        createdAt: b.created_at ? b.created_at.toISOString() : 'N/A'
+      });
     });
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=bookings-export-${Date.now()}.csv`);
-    res.status(200).send(csv);
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 24;
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1F4E78' }
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.getCell('amount').alignment = { horizontal: 'right' };
+        row.getCell('status').alignment = { horizontal: 'center' };
+      }
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=bookings-export-${Date.now()}.xlsx`);
+
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (err) {
     next(err);
   }
