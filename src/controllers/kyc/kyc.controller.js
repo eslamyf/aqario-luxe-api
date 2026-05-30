@@ -19,37 +19,43 @@ const { createNotification } = require('../../utils/notificationHelper');
  * Upload KYC documents (National ID, Passport, etc.)
  */
 exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
-  const { documentType, frontImage, backImage, nationality, phoneNumber, livePhoto } = req.body;
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
+  }
+
+  const existingDoc = user.kycDocuments && user.kycDocuments[0];
+  const finalDocumentType = req.body.documentType || (existingDoc ? existingDoc.type : 'national_id');
+  const finalFrontImage = req.body.frontImage || (existingDoc ? existingDoc.frontImage : null);
+  const finalBackImage = req.body.backImage || (existingDoc ? existingDoc.backImage : null);
+  const finalLivePhoto = req.body.livePhoto || user.kycLivePhoto;
+  const finalNationality = req.body.nationality || user.kycNationality;
+  const finalPhoneNumber = req.body.phoneNumber || user.kycPhoneNumber;
 
   // Validate document type
   const VALID_TYPES = ['national_id', 'passport', 'drivers_license'];
-  if (!VALID_TYPES.includes(documentType)) {
+  if (!VALID_TYPES.includes(finalDocumentType)) {
     return res.status(400).json({
       status: 'fail',
       message: 'KYC.INVALID_DOC_TYPE',
     });
   }
 
-  if (!frontImage) {
+  if (!finalFrontImage) {
     return res.status(400).json({
       status: 'fail',
       message: 'KYC.FRONT_IMAGE_REQUIRED',
     });
   }
 
-  if (!nationality || nationality.trim() === '') {
+  if (!finalNationality || finalNationality.trim() === '') {
     return res.status(400).json({ status: 'fail', message: 'KYC.NATIONALITY_REQUIRED' });
   }
-  if (!phoneNumber || phoneNumber.trim() === '') {
+  if (!finalPhoneNumber || finalPhoneNumber.trim() === '') {
     return res.status(400).json({ status: 'fail', message: 'KYC.PHONE_NUMBER_REQUIRED' });
   }
-  if (!livePhoto || livePhoto.trim() === '') {
+  if (!finalLivePhoto || finalLivePhoto.trim() === '') {
     return res.status(400).json({ status: 'fail', message: 'KYC.LIVE_PHOTO_REQUIRED' });
-  }
-
-  const user = await User.findById(req.user._id);
-  if (!user) {
-    return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   }
 
   // ── Finalize ownership docs ──────
@@ -59,12 +65,12 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
   });
 
   // Store identity document(s) - replace old ones or clear if empty
-  if (frontImage) {
+  if (finalFrontImage) {
     user.kycDocuments = [
       {
-        type: documentType || 'national_id',
-        frontImage,
-        backImage: backImage || null,
+        type: finalDocumentType || 'national_id',
+        frontImage: finalFrontImage,
+        backImage: finalBackImage || null,
         uploadedAt: new Date(),
       },
     ];
@@ -73,9 +79,9 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
   }
 
   // Store new KYC fields
-  user.kycNationality = nationality;
-  user.kycPhoneNumber = phoneNumber;
-  user.kycLivePhoto = livePhoto;
+  user.kycNationality = finalNationality;
+  user.kycPhoneNumber = finalPhoneNumber;
+  user.kycLivePhoto = finalLivePhoto;
 
   // Update KYC status and version
   if (user.kycDocuments.length === 0 && user.ownershipDocuments.length === 0) {
@@ -299,10 +305,12 @@ exports.getMyKYC = asyncHandler(async (req, res) => {
     return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   }
 
-  // Don't expose image URLs in documents (security)
+  // Expose image URLs in documents for in-browser preview
   const documents = user.kycDocuments.map(doc => ({
     _id: doc._id,
     type: doc.type,
+    frontImage: doc.frontImage,
+    backImage: doc.backImage,
     uploadedAt: doc.uploadedAt,
   }));
 
@@ -773,7 +781,24 @@ exports.downloadOwnershipFile = asyncHandler(async (req, res) => {
   };
 
   const contentType = mimeTypes[ext] || 'application/octet-stream';
-  const downloadName = `document${ext || '.bin'}`;
+
+  // Extract original filename (without extension) from DB or URL
+  let originalFileName = 'document';
+  if (doc.fileName) {
+    originalFileName = path.basename(doc.fileName, path.extname(doc.fileName));
+  } else if (parsedUrl.pathname) {
+    originalFileName = path.basename(parsedUrl.pathname, path.extname(parsedUrl.pathname));
+  }
+
+  // Sanitize the filename to prevent HTTP Header Injection (remove newlines, carriage returns, quotes, and backslashes)
+  let sanitizedFileName = originalFileName.replace(/[\r\n"\\]/g, '').trim();
+  if (!sanitizedFileName) {
+    sanitizedFileName = 'document';
+  }
+
+  // Get clean extension without leading dot
+  const cleanExt = (ext || '.bin').replace(/^\./, '');
+  const downloadName = `${sanitizedFileName}_${docId}.${cleanExt}`;
 
   // Download and stream response securely from Cloudinary/storage
   const https = require('https');
