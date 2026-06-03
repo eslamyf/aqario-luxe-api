@@ -55,7 +55,7 @@ beforeEach(async () => {
     requester: buyer.user._id,
     property: prop._id,
     owner: owner.user._id,
-    status: 'approved',
+    status: 'APPROVED_FOR_BOOKING',
     preferredDate: new Date(),
     preferredTime: '10:00 AM'
   });

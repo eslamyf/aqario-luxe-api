@@ -77,6 +77,9 @@ const reportRoutes = require('./routes/report.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
 const healthRoutes = require('./routes/health.routes');
 const kycRoutes = require('./routes/kyc.routes');
+const auctionRoutes = require('./routes/auction.routes');
+const bidRoutes = require('./routes/bid.routes');
+const agentRoutes = require('./routes/agent.routes');
 const CLIENT_URL = process.env.CLIENT_URL;
 
 if (!CLIENT_URL) {
@@ -130,7 +133,12 @@ app.use(helmet({
 }));
 
 // Body parsing
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (mongoSanitize) app.use(mongoSanitize());
@@ -176,6 +184,9 @@ app.use(`${API}/dashboard`, dashboardRoutes);
 app.use(`${API}/notifications`, notificationRoutes);
 app.use(`${API}/reports`, reportRoutes);
 app.use(`${API}/subscriptions`, subscriptionRoutes);
+app.use(`${API}/auctions`, auctionRoutes);
+app.use(`${API}/bids`, bidRoutes);
+app.use(`${API}/agents`, agentRoutes);
 
 // Root
 app.get('/', (req, res) => res.json({

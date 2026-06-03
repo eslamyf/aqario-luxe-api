@@ -161,6 +161,8 @@
     "PROPERTY_NOT_FOUND": "Property not found",
     "PROPERTY_APPROVED": "Property approved successfully",
     "PROPERTY_REJECTED": "Property rejected successfully",
+    "AUCTION_NOT_FOUND": "Auction not found",
+    "AUCTION_APPROVED": "Auction approved successfully",
     "REVIEW_NOT_FOUND": "Review not found",
     "REVIEW_DELETED": "Review deleted successfully",
     "INCOMPLETE_BOOKING": "Incomplete booking data"
@@ -179,7 +181,8 @@
     "FILE_TOO_LARGE": "File size exceeds the limit",
     "TOO_MANY_FILES": "Too many files uploaded",
     "PASSWORD_CHANGED_LOGIN": "Password was recently changed, please log in again",
-    "SESSION_INVALID": "Session is no longer valid, please log in again"
+    "SESSION_INVALID": "Session is no longer valid, please log in again",
+    "DATE_ALREADY_BOOKED": "The property is booked during this time range"
   },
 
   "VALIDATION": {
@@ -235,6 +238,13 @@
     "RATING_REQUIRED": "Rating is required",
     "RATING_RANGE": "Rating must be between 1 and 5",
     "COMMENT_MAX": "Comment must not exceed 500 characters",
+    "STARTING_PRICE_REQUIRED": "Starting price is required",
+    "STARTING_PRICE_MIN": "Starting price must be greater than 0",
+    "BID_INCREMENT_MIN": "Bid increment must be greater than 0",
+    "AUCTION_ID_REQUIRED": "Auction ID is required",
+    "AUCTION_ID_INVALID": "Invalid auction ID",
+    "BID_AMOUNT_REQUIRED": "Bid amount is required",
+    "BID_AMOUNT_MIN": "Bid amount must be greater than 0",
     "TITLE_MAX": "Property title must not exceed 100 characters",
     "RATING_MIN": "Rating cannot be less than 0",
     "RATING_MAX": "Rating cannot exceed 5",
@@ -265,6 +275,24 @@
     "REPORT_REVIEWED": "Your report has been reviewed",
     "REPORT_REVIEWED_MSG": "Your report has been {{status}}",
     "NEW_KYC_SUBMISSION": "New KYC Submission",
-    "NEW_KYC_SUBMISSION_MSG": "User \"{{name}}\" has submitted their KYC verification documents."
+    "NEW_KYC_SUBMISSION_MSG": "User \"{{name}}\" has submitted their KYC verification documents.",
+    "NEW_BID": "New bid placed",
+    "NEW_BID_MSG": "New bid of {{amount}} placed by {{name}}",
+    "AUCTION_WON": "🎉 Congratulations! You won the auction",
+    "AUCTION_WON_MSG": "You won the auction for \"{{property}}\" with a bid of {{amount}}",
+    "AUCTION_APPROVED_TITLE": "Your auction has been approved",
+    "AUCTION_APPROVED_MSG": "The auction for \"{{property}}\" has been approved and will start on time"
+  },
+
+  "AUCTION": {
+    "NOT_FOUND": "Auction not found",
+    "CLOSED_WITH_WINNER": "Auction closed with winner",
+    "CLOSED_NO_BIDS": "Auction closed with no bids"
+  },
+
+  "BID": {
+    "MINIMUM_BID": "Bid must be at least {{minBid}}",
+    "OWN_AUCTION": "You cannot bid on your own auction",
+    "PLACED": "Bid placed successfully"
   }
 }

@@ -38,9 +38,12 @@ exports.createBooking = async (req, res, next) => {
     // viewing request for this property. This prevents spam/fake reservations.
     const viewingCheck = await checkViewingEligibility(req.user._id, propertyId);
     if (!viewingCheck.eligible) {
-      const statusMsg = viewingCheck.status === 'pending'
-        ? 'Your viewing request is still under review. Please wait for owner approval before booking.'
-        : 'Booking requires an approved or completed property viewing. Please schedule a viewing first.';
+      let statusMsg = 'Booking requires an approved or completed property viewing. Please schedule a viewing first.';
+      if (viewingCheck.status === 'pending') {
+        statusMsg = 'Your viewing request is still under review. Please wait for owner approval before booking.';
+      } else if (viewingCheck.status === 'approved' || viewingCheck.status === 'completed') {
+        statusMsg = 'Your viewing is approved, but the booking is locked until the owner explicitly approves the property for booking.';
+      }
       return res.status(403).json({
         status: 'fail',
         code:   'VIEWING_REQUIRED',
@@ -49,15 +52,23 @@ exports.createBooking = async (req, res, next) => {
       });
     }
 
-    // Check for date conflicts
+    // Check for date conflicts: ignore pending bookings older than 10 minutes
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const conflict = await Booking.findOne({
       property_id: propertyId,
-      status:      { $in: ['pending', 'approved'] },
       start_date:  { $lt: parsedEnd },
       end_date:    { $gt: parsedStart },
+      $or: [
+        { status: 'approved' },
+        { status: 'pending', created_at: { $gte: tenMinutesAgo } }
+      ]
     });
     if (conflict) {
-      return res.status(409).json({ status: 'fail', message: req.t('BOOKING.DATE_CONFLICT') });
+      return res.status(409).json({
+        status: 'fail',
+        message: req.t('ERRORS.DATE_ALREADY_BOOKED'),
+        code: 'DATE_ALREADY_BOOKED'
+      });
     }
 
     const booking = await Booking.create({

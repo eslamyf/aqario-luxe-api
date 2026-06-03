@@ -15,19 +15,18 @@ const checkViewingEligibility = async (userId, propertyId) => {
   const viewing = await ViewingRequest.findOne({
     requester: userId,
     property: propertyId,
-    status: { $in: ['approved', 'completed'] },
+    status: 'APPROVED_FOR_BOOKING',
   }).select('_id status').lean();
 
   if (!viewing) {
-    // Also check if there is a pending request so the caller can provide context
-    const pending = await ViewingRequest.findOne({
+    // Check if there is any request to return its status for context
+    const existing = await ViewingRequest.findOne({
       requester: userId,
       property: propertyId,
-      status: 'pending',
-    }).select('_id status').lean();
+    }).sort({ updatedAt: -1 }).select('_id status').lean();
 
-    if (pending) {
-      return { eligible: false, status: 'pending', viewingId: pending._id.toString() };
+    if (existing) {
+      return { eligible: false, status: existing.status, viewingId: existing._id.toString() };
     }
 
     return { eligible: false, status: null, viewingId: null };
@@ -39,7 +38,7 @@ const checkViewingEligibility = async (userId, propertyId) => {
 /**
  * Update viewing request status with notification and email side effects.
  * Allowed transitions by actor:
- *   owner/admin  → approved | rejected | completed
+ *   owner/admin  → approved | rejected | completed | APPROVED_FOR_BOOKING
  *   requester    → cancelled  (handled separately in cancelViewingRequest)
  *
  * @param {object} io - Socket.IO instance
@@ -53,12 +52,15 @@ const applyStatusUpdate = async (io, viewingRequest, newStatus) => {
   const isApproved  = newStatus === 'approved';
   const isCompleted = newStatus === 'completed';
   const isRejected  = newStatus === 'rejected';
+  const isApprovedForBooking = newStatus === 'APPROVED_FOR_BOOKING';
 
   // ── In-app notification to requester ───────────────────────────────────────
   let notifTitle, notifMsg;
-  if (isApproved || isCompleted) {
+  if (isApproved || isCompleted || isApprovedForBooking) {
     notifTitle = isApproved
       ? 'Viewing Request Approved'
+      : isApprovedForBooking
+      ? 'Approved for Booking — You Can Now Book'
       : 'Viewing Completed — You Can Now Book';
     notifMsg = `You can now reserve "${viewingRequest.property?.title}". Click to proceed to booking.`;
   } else if (isRejected) {
@@ -77,7 +79,7 @@ const applyStatusUpdate = async (io, viewingRequest, newStatus) => {
 
   // ── Email to requester ──────────────────────────────────────────────────────
   if (viewingRequest.requester?.email) {
-    if (isApproved || isCompleted) {
+    if (isApproved || isCompleted || isApprovedForBooking) {
       await sendViewingApprovedBookingEmail(viewingRequest.requester.email, {
         propertyTitle: viewingRequest.property?.title,
         preferredDate: viewingRequest.preferredDate,

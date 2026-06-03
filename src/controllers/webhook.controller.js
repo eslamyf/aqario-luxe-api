@@ -214,6 +214,8 @@ exports.handlePaypalWebhook = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', message: 'Webhook processed', data: result });
 });
 
+
+
 // ══════════════════════════════════════════════════════════════════════════════
 // POST /api/v1/webhook/verify  (manual testing utility — dev only)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -222,6 +224,7 @@ exports.verifyWebhook = asyncHandler(async (req, res) => {
   logger.info(`[Webhook] Manual verify: ${provider} — ${eventId}`);
   res.status(200).json({ status: 'success', message: 'Webhook verified' });
 });
+
 
 
 

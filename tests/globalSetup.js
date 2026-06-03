@@ -9,4 +9,5 @@ module.exports = async () => {
   process.env.NODE_ENV           = 'test';
   process.env.CLIENT_URL         = 'http://localhost:3000';
   process.env.REDIS_URL          = '';
+  process.env.MONGOMS_SPAWN_TIMEOUT = '60000';
 };

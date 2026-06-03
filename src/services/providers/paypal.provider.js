@@ -150,10 +150,56 @@ class PaypalProvider extends BaseProvider {
     try {
       logger.info(`[PayPal] Verifying order: ${paymentKey}`);
 
-      // Usually triggered by frontend redirect after user approval
-      throw new Error('PayPal verification via polling not fully implemented. Use webhooks.');
+      const accessToken = await this.getAccessToken();
+
+      // Retrieve order details
+      const response = await fetch(`${this.apiUrl}/checkout/orders/${paymentKey}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to retrieve PayPal order: HTTP ${response.status}`);
+      }
+
+      const order = await response.json();
+      logger.info(`[PayPal] Order status retrieved: ${order.status}`);
+
+      let captureData;
+
+      if (order.status === 'APPROVED') {
+        // Capture approved order
+        captureData = await this.captureOrder(paymentKey);
+      } else if (order.status === 'COMPLETED') {
+        // Order is already captured
+        captureData = order;
+      } else {
+        return {
+          success: false,
+          error: `PayPal order status is ${order.status}`,
+        };
+      }
+
+      // Extract transaction ID from the first capture of the purchase unit
+      const purchaseUnit = captureData.purchase_units?.[0];
+      const capture = purchaseUnit?.payments?.captures?.[0];
+      const transactionId = capture?.id || paymentKey; // Fallback to paymentKey if ID not found
+
+      return {
+        success: true,
+        transactionId,
+        metadata: {
+          orderId: paymentKey,
+          status: captureData.status,
+          amount: purchaseUnit?.amount?.value || order.purchase_units?.[0]?.amount?.value,
+          currency: purchaseUnit?.amount?.currency_code || order.purchase_units?.[0]?.amount?.currency_code,
+        },
+      };
     } catch (err) {
-      logger.error('[PayPal] verifyPayment error:', err);
+      logger.error('[PayPal] verifyPayment error:', err.message);
       throw err;
     }
   }

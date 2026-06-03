@@ -32,7 +32,7 @@ const checkSavedSearches = async (io, property) => {
         await createNotification(io, search.userId._id, {
           type:    'system',
           title:   '🏠 New property matching your search',
-          message: `Property "${property.title}" in ${property.location?.city} matches your search criteria "${search.name}"`,
+          message: `Property "${property.title?.en || property.title?.ar || 'Property'}" in ${property.location?.city?.en || property.location?.city?.ar || ''} matches your search criteria "${search.name}"`,
           link:    `/properties/${property._id}`,
           meta:    { propertyId: property._id, searchId: search._id },
         });

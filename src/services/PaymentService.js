@@ -7,6 +7,12 @@ const AppError = require('../utils/AppError');
 const logger = require('../utils/logger');
 const mongoose = require('mongoose');
 
+const getPropertyTitleString = (title) => {
+  if (!title) return 'Property';
+  if (typeof title === 'string') return title;
+  return title.en || title.ar || 'Property';
+};
+
 // ─────────────────────────────────────────────────────────────────
 // Payment Service Layer
 // ─────────────────────────────────────────────────────────────────
@@ -116,6 +122,7 @@ class PaymentService {
         netAmount,
         totalAmount,
         paymentMethod,
+        currency: property.currency || 'EGP',
         status: 'pending',
         expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min
         ipAddress,
@@ -135,7 +142,7 @@ class PaymentService {
           userId: userId,
           propertyId: property._id.toString(),
           bookingId: bookingId,
-          propertyName: property.title || 'Property', // BUG-15 FIX: Property model uses `title`, not `name`
+          propertyName: getPropertyTitleString(property.title),
           currency: payment.currency,
         });
       } catch (providerErr) {
@@ -445,7 +452,7 @@ class PaymentService {
           paymentId: transaction._id.toString(),
           userId,
           propertyId,
-          propertyName: `Promotion: ${type} - ${property.title}`,
+          propertyName: `Promotion: ${type} - ${getPropertyTitleString(property.title)}`,
           currency,
         });
       } catch (providerErr) {

@@ -397,6 +397,7 @@ router.get('/me/stats', dashboardController.buyerStats);
  *       401: { $ref: '#/components/responses/401' }
  */
 router.get('/me/bookings', dashboardController.buyerBookings);
+router.get('/buyer/bookings', dashboardController.buyerBookings);
 
 /**
  * @swagger

@@ -175,6 +175,17 @@ describe('Booking Management', () => {
       isApproved:  true,
     });
     rentPropertyId = rentProp._id.toString();
+
+    // Create an approved viewing request for the buyer to bypass the viewing-gated booking constraint
+    const ViewingRequest = require('../src/models/viewingRequest.model');
+    await ViewingRequest.create({
+      requester: buyerId,
+      property: rentProp._id,
+      owner: ownerId,
+      status: 'APPROVED_FOR_BOOKING',
+      preferredDate: new Date(),
+      preferredTime: '10:00 AM'
+    });
   });
 
   it('should create a booking for an available rental property (201)', async () => {

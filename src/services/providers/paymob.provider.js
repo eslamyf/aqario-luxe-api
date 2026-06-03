@@ -76,6 +76,34 @@ class PaymobProvider extends BaseProvider {
         };
       }
 
+      // Load user details for mandatory billing info
+      const User = require('../../models/user.model');
+      const user = await User.findById(userId);
+
+      const nameParts = (user?.name || 'Customer User').trim().split(/\s+/);
+      const userFirstName = nameParts[0] || 'Customer';
+      const userLastName = nameParts.slice(1).join(' ') || 'User';
+      const userEmail = user?.email || `user_${userId}@realestate.local`;
+      
+      let userPhone = user?.phone || '+20100000000';
+      userPhone = userPhone.replace(/[^\d+]/g, '');
+      if (userPhone.startsWith('01') && userPhone.length === 11) {
+        userPhone = '+20' + userPhone.substring(1);
+      } else if (!userPhone.startsWith('+')) {
+        userPhone = '+' + userPhone;
+      }
+
+      // Convert currency to EGP if not already EGP
+      let finalAmount = amount;
+      let finalCurrency = currency || 'EGP';
+
+      if (finalCurrency.toUpperCase() !== 'EGP') {
+        const exchangeRate = 50.0;
+        finalAmount = amount * exchangeRate;
+        finalCurrency = 'EGP';
+        logger.info(`[Paymob] Converted ${amount} ${currency} to ${finalAmount} EGP (rate: ${exchangeRate})`);
+      }
+
       // Step 1: Get authentication token
       const authToken = await this.getAuthToken();
 
@@ -83,22 +111,22 @@ class PaymobProvider extends BaseProvider {
       const orderData = {
         auth_token: authToken,
         delivery_needed: false,
-        amount_cents: Math.round(amount * 100), // Convert to cents
-        currency: currency || 'EGP',
+        amount_cents: Math.round(finalAmount * 100), // Convert to cents
+        currency: finalCurrency,
         merchant_order_id: paymentId, // Link to our payment ID
         items: [
           {
             name: propertyName,
-            amount_cents: Math.round(amount * 100),
+            amount_cents: Math.round(finalAmount * 100),
             quantity: 1,
             description: `Booking for ${propertyName}`,
           },
         ],
         customer: {
-          first_name: 'Customer',
-          last_name: 'User',
-          email: `user_${userId}@realestate.local`,
-          phone_number: '+20100000000',
+          first_name: userFirstName,
+          last_name: userLastName,
+          email: userEmail,
+          phone_number: userPhone,
         },
       };
 
@@ -110,24 +138,24 @@ class PaymobProvider extends BaseProvider {
       // Step 3: Generate payment key
       const paymentKeyData = {
         auth_token: authToken,
-        amount_cents: Math.round(amount * 100),
+        amount_cents: Math.round(finalAmount * 100),
         expiration: 3600, // 1 hour
         order_id: orderId,
         billing_data: {
           apartment: 'NA',
-          email: `user_${userId}@realestate.local`,
+          email: userEmail,
           floor: 'NA',
-          first_name: 'Customer',
+          first_name: userFirstName,
           street: 'NA',
           building: 'NA',
           postal_code: 'NA',
           city: 'NA',
           country: 'NA',
-          last_name: 'User',
-          phone_number: '+20100000000',
+          last_name: userLastName,
+          phone_number: userPhone,
           state: 'NA',
         },
-        currency: currency || 'EGP',
+        currency: finalCurrency,
         integration_id: this.integrationId,
       };
 

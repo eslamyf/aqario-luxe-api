@@ -426,7 +426,7 @@ describe('GET /api/v1/kyc/ownership/download/:userId/:docId — Secure Download'
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/pdf');
-    expect(res.headers['content-disposition']).toBe('attachment; filename="document.pdf"');
+    expect(res.headers['content-disposition']).toBe(`attachment; filename="contract_${docId}.pdf"`);
     expect(res.body.toString()).toBe('dummy file content');
 
     spy.mockRestore();

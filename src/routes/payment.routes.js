@@ -41,7 +41,6 @@ const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware
 router.post(
   '/checkout',
   protect,
-  requireKYC,
   idempotencyMiddleware,
   paymentController.initiatePayment
 );

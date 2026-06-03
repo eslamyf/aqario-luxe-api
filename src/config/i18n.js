@@ -23,6 +23,14 @@ i18next
     // ── Interpolation ──────────────────────────────────────
     interpolation: {
       escapeValue: true,           // Prevent XSS
+      format: function(value, format, lng) {
+        if (value && typeof value === 'object') {
+          if ('en' in value || 'ar' in value) {
+            return value[lng] || value.en || value.ar || '';
+          }
+        }
+        return value;
+      }
     },
 
     // ── Misc ───────────────────────────────────────────────

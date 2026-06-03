@@ -25,12 +25,12 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
   }
 
   const existingDoc = user.kycDocuments && user.kycDocuments[0];
-  const finalDocumentType = req.body.documentType || (existingDoc ? existingDoc.type : 'national_id');
-  const finalFrontImage = req.body.frontImage || (existingDoc ? existingDoc.frontImage : null);
-  const finalBackImage = req.body.backImage || (existingDoc ? existingDoc.backImage : null);
-  const finalLivePhoto = req.body.livePhoto || user.kycLivePhoto;
-  const finalNationality = req.body.nationality || user.kycNationality;
-  const finalPhoneNumber = req.body.phoneNumber || user.kycPhoneNumber;
+  const finalDocumentType = req.body.documentType || 'national_id';
+  const finalFrontImage = req.body.frontImage || null;
+  const finalBackImage = req.body.backImage || null;
+  const finalLivePhoto = req.body.livePhoto || null;
+  const finalNationality = req.body.nationality || null;
+  const finalPhoneNumber = req.body.phoneNumber || null;
 
   // Validate document type
   const VALID_TYPES = ['national_id', 'passport', 'drivers_license'];
@@ -98,7 +98,7 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
 
   await user.save({ validateBeforeSave: false });
 
-  logger.info(`[KYC] User ${user._id} submitted KYC (${documentType}) | ${user.ownershipDocuments.length} ownership docs → PENDING`);
+  logger.info(`[KYC] User ${user._id} submitted KYC (${finalDocumentType}) | ${user.ownershipDocuments.length} ownership docs → PENDING`);
 
   // Instantly send a socket notification to all admin users upon a successful KYC submission
   if (user.kycStatus === 'pending') {
@@ -106,7 +106,7 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
       const admins = await User.find({ role: 'admin' });
       for (const admin of admins) {
         await createNotification(req.io, admin._id, {
-          type: 'kyc',
+          type: 'system',
           title: req.t('NOTIFICATION.NEW_KYC_SUBMISSION'),
           message: req.t('NOTIFICATION.NEW_KYC_SUBMISSION_MSG', { name: user.name }),
           link: '/admin/kyc'
@@ -124,7 +124,7 @@ exports.uploadKYCDocuments = asyncHandler(async (req, res) => {
       kycStatus: 'pending',
       submitted: true,
       submittedAt: user.kycSubmittedAt,
-      documentType,
+      documentType: finalDocumentType,
       ownershipDocumentCount: user.ownershipDocuments.length
     },
   });
@@ -305,12 +305,10 @@ exports.getMyKYC = asyncHandler(async (req, res) => {
     return res.status(404).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   }
 
-  // Expose image URLs in documents for in-browser preview
+  // Expose image URLs in documents for in-browser preview (omitting sensitive images for security)
   const documents = user.kycDocuments.map(doc => ({
     _id: doc._id,
     type: doc.type,
-    frontImage: doc.frontImage,
-    backImage: doc.backImage,
     uploadedAt: doc.uploadedAt,
   }));
 

@@ -59,6 +59,30 @@ module.exports = (httpServer) => {
       socket.join(`user_${socket.user.id}`);
     }
 
+    // Join/leave auction rooms
+    socket.on('joinAuction', async (auctionId) => {
+      try {
+        const Auction = require('../models/auction.model');
+        const auction = await Auction.findById(auctionId);
+        if (!auction) {
+          return socket.emit('error', { message: 'Auction not found' });
+        }
+        socket.join(`auction_${auctionId}`);
+        socket.emit('auctionJoined', {
+          auctionId,
+          currentBid: auction.currentBid || auction.startingPrice,
+          startingPrice: auction.startingPrice,
+          status: auction.status,
+        });
+      } catch (err) {
+        socket.emit('error', { message: err.message });
+      }
+    });
+
+    socket.on('leaveAuction', (auctionId) => {
+      socket.leave(`auction_${auctionId}`);
+    });
+
     // ── disconnect ───────────────────────────────────────────
     socket.on('disconnect', (reason) => {
       logger.info(`❌ Socket disconnected: ${socket.id} — reason: ${reason}`);
@@ -73,4 +97,14 @@ module.exports.getIO = () => {
   if (!_io) throw new Error('Socket.IO has not been initialized');
   return _io;
 };
+
+module.exports.emitNewBid = (auctionId, bid) => {
+  if (!_io) return;
+  _io.to(`auction_${auctionId}`).emit('newBid', {
+    auctionId,
+    currentBid: bid.amount,
+    bid,
+  });
+};
+
 

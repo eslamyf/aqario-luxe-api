@@ -95,7 +95,7 @@ exports.checkViewingStatus = async (req, res, next) => {
 exports.updateStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
-    if (!['approved', 'rejected', 'completed'].includes(status)) {
+    if (!['approved', 'rejected', 'completed', 'APPROVED_FOR_BOOKING'].includes(status)) {
       return res.status(400).json({ status: 'fail', message: req.t('VIEWING.STATUS_INVALID') });
     }
 
@@ -116,6 +116,7 @@ exports.updateStatus = async (req, res, next) => {
     let successMessage;
     if (status === 'approved')  successMessage = req.t('VIEWING.APPROVED');
     else if (status === 'completed') successMessage = 'Viewing marked as completed. Client can now book.';
+    else if (status === 'APPROVED_FOR_BOOKING') successMessage = 'Viewing approved for booking. Client can now complete payment.';
     else successMessage = req.t('VIEWING.REJECTED');
 
     res.status(200).json({

@@ -13,7 +13,14 @@ let mongod;
 
 // ─── Global Setup ──────────────────────────────────────────────
 beforeAll(async () => {
-  mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  mongod = await MongoMemoryReplSet.create({
+    replSet: { count: 1 },
+    instanceOpts: [
+      {
+        launchTimeout: 60000,
+      },
+    ],
+  });
   const uri = mongod.getUri();
 
   if (mongoose.connection.readyState !== 0) {

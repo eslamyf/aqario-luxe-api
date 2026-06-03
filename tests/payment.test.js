@@ -115,9 +115,9 @@ describe('POST /api/v1/payments/checkout — Validation', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// 2. KYC Gate — requireKYC middleware
+// 2. KYC Gate — check if KYC is bypassed for payments/checkout
 // ════════════════════════════════════════════════════════════════════════════════
-describe('POST /api/v1/payments/checkout — KYC Gate', () => {
+describe('POST /api/v1/payments/checkout — KYC Gate Removal', () => {
   let noKycToken, noKycBookingId;
 
   beforeAll(async () => {
@@ -128,7 +128,7 @@ describe('POST /api/v1/payments/checkout — KYC Gate', () => {
     noKycToken = noKycBuyer.token;
     const noKycBuyerId = noKycBuyer.user._id;
 
-    // Give them an approved booking so only the KYC gate stops them
+    // Give them an approved booking
     const b = await Booking.create({
       user_id:     noKycBuyerId,
       property_id: propertyId,
@@ -140,14 +140,14 @@ describe('POST /api/v1/payments/checkout — KYC Gate', () => {
     noKycBookingId = b._id.toString();
   });
 
-  it('should return 403 when buyer KYC is not approved', async () => {
+  it('should succeed even when buyer KYC is not submitted or approved', async () => {
     const res = await request(app)
       .post('/api/v1/payments/checkout')
       .set('Authorization', `Bearer ${noKycToken}`)
       .send({ bookingId: noKycBookingId, paymentMethod: 'cash' });
 
-    expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/kyc/i);
+    expect([200, 201]).toContain(res.status);
+    expect(res.body.status).toBe('success');
   });
 });
 

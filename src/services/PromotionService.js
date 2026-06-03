@@ -53,7 +53,7 @@ class PromotionService {
       const io = getIO();
       io.to(`user_${transaction.user}`).emit('notification', {
         type: 'PROMOTION_ACTIVATED',
-        message: `Your ${transaction.type} promotion for "${property.title}" is now active!`,
+        message: `Your ${transaction.type} promotion for "${property.title?.en || property.title?.ar || 'Property'}" is now active!`,
         propertyId: property._id,
       });
 
