@@ -1,58 +1,54 @@
 const mongoose = require('mongoose');
-const Property = require('../models/property.model');
+const path = require('path');
+const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-const seedProperties = async () => {
+const User = require('../models/user.model');
+
+const seedAdmin = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe');
-    console.log('⏳ Seeding properties with correct validation...');
+    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aqario_luxe';
+    await mongoose.connect(mongoUri);
+    console.log('✅ Connected to MongoDB');
 
-    await Property.deleteMany({});
+    const email = 'admin@luxe.com';
+    const rawPassword = 'Admin123!@#';
+    
+    // Hash password manually to ensure it's hashed correctly for findOneAndUpdate/upsert
+    const hashedPassword = await bcrypt.hash(rawPassword, 12);
 
-    const properties = [
-      {
-        title: 'Luxury Villa with Nile View',
-        description: 'A stunning villa located in the heart of Qena with a direct view of the Nile.',
-        price: 5000,
-        // التعديل هنا: الـ location بقى object فيه الحقول المطلوبة
-        location: {
-          city: 'Qena',
-          district: 'Nile Corniche',
-          address: 'Street 15, Nile View'
-        },
-        // التعديل هنا: جرب 'for-rent' لأنها الشائعة في الـ Enums بتاعتك
-        type: 'for-rent', 
-        category: 'villa',
-        owner: '69f21e67e7e2a05efc53cf4e', // الـ ID بتاعك
-        images: ['https://res.cloudinary.com/demo/image/upload/v1631533327/sample.jpg'],
-        features: ['Wifi', 'Pool', 'Air Conditioning'],
-        isAvailable: true
-      },
-      {
-        title: 'Modern Apartment Near University',
-        description: 'Perfect for students and professionals. Fully furnished.',
-        price: 1200,
-        location: {
-          city: 'Qena',
-          district: 'South Valley',
-          address: 'University District'
-        },
-        type: 'for-rent',
-        category: 'apartment',
-        owner: '69f21e67e7e2a05efc53cf4e',
-        images: ['https://res.cloudinary.com/demo/image/upload/v1631533327/sample.jpg'],
-        features: ['Elevator', 'Kitchen', 'Balcony'],
-        isAvailable: true
-      }
-    ];
+    const adminData = {
+      name: 'Master Admin',
+      email,
+      password: hashedPassword,
+      role: 'admin',
+      isVerified: true,
+      isActive: true,
+      kycStatus: 'approved',
+      kycNationality: 'Egyptian',
+      kycPhoneNumber: '+201234567890',
+      kycLivePhoto: 'https://res.cloudinary.com/demo/image/upload/sample.jpg'
+    };
 
-    await Property.insertMany(properties);
-    console.log('✅ 2 Properties added successfully with full validation!');
-    process.exit();
+    // Use findOneAndUpdate with upsert: true
+    const admin = await User.findOneAndUpdate(
+      { email },
+      { $set: adminData },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('✅ MASTER ADMIN ACCOUNT SEEDED SUCCESSFULLY');
+    console.log(`📧 Email:    ${admin.email}`);
+    console.log(`🔑 Password:  ${rawPassword}`);
+    console.log(`🆔 ID:        ${admin._id}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    process.exit(0);
   } catch (error) {
-    console.error('❌ Error seeding properties:', error.message);
+    console.error('❌ Error seeding admin:', error.message);
     process.exit(1);
   }
 };
 
-seedProperties();
+seedAdmin();

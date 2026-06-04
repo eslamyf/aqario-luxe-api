@@ -17,7 +17,10 @@ const createUser = async () => {
       role: 'buyer',
       isVerified: true,
       isActive: true,
-      kycStatus: 'approved' // Approved for testing
+      kycStatus: 'approved', // Approved for testing
+      kycNationality: 'Egyptian',
+      kycPhoneNumber: '+201234567890',
+      kycLivePhoto: 'https://res.cloudinary.com/demo/image/upload/sample.jpg'
     };
 
     const existingUser = await User.findOne({ email: userData.email });

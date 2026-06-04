@@ -5,11 +5,11 @@ const path       = require('path');
 
 i18next
   .use(Backend)
+  .use(middleware.LanguageDetector)
   .init({
-    // ── Fixed to English only ──────────────────────────────
-    lng:           'en',
     fallbackLng:   'en',
-    preload:       ['en'],
+    preload:       ['en', 'ar'],
+    supportedLngs: ['en', 'ar'],
 
     // ── Namespace ──────────────────────────────────────────
     ns:        ['translation'],
