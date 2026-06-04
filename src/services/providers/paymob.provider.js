@@ -92,16 +92,30 @@ class PaymobProvider extends BaseProvider {
       } else if (!userPhone.startsWith('+')) {
         userPhone = '+' + userPhone;
       }
+      if (userPhone === '+' || userPhone.length < 5) {
+        userPhone = '+20100000000';
+      }
+
+      const getFallbackString = (val) => {
+        if (!val) return 'NA';
+        const cleaned = String(val).trim();
+        return cleaned.length > 0 ? cleaned : 'NA';
+      };
 
       // Convert currency to EGP if not already EGP
       let finalAmount = amount;
-      let finalCurrency = currency || 'EGP';
+      let finalCurrency = 'EGP'; // Force explicit currency validation mapping to EGP
 
-      if (finalCurrency.toUpperCase() !== 'EGP') {
+      if (currency && currency.toUpperCase() !== 'EGP') {
         const exchangeRate = 50.0;
         finalAmount = amount * exchangeRate;
-        finalCurrency = 'EGP';
         logger.info(`[Paymob] Converted ${amount} ${currency} to ${finalAmount} EGP (rate: ${exchangeRate})`);
+      }
+
+      // Safe-capping mechanism for non-production environments
+      if (process.env.NODE_ENV !== 'production' && finalAmount > 100000) {
+        logger.info(`[Paymob] [SANDBOX] Testing amount ${finalAmount} EGP exceeds threshold. Intercepted and capped to 100 EGP for upstream aggregator call.`);
+        finalAmount = 100;
       }
 
       // Step 1: Get authentication token
@@ -123,10 +137,10 @@ class PaymobProvider extends BaseProvider {
           },
         ],
         customer: {
-          first_name: userFirstName,
-          last_name: userLastName,
-          email: userEmail,
-          phone_number: userPhone,
+          first_name: getFallbackString(userFirstName),
+          last_name: getFallbackString(userLastName),
+          email: getFallbackString(userEmail),
+          phone_number: getFallbackString(userPhone),
         },
       };
 
@@ -142,18 +156,18 @@ class PaymobProvider extends BaseProvider {
         expiration: 3600, // 1 hour
         order_id: orderId,
         billing_data: {
-          apartment: 'NA',
-          email: userEmail,
-          floor: 'NA',
-          first_name: userFirstName,
-          street: 'NA',
-          building: 'NA',
-          postal_code: 'NA',
-          city: 'NA',
-          country: 'NA',
-          last_name: userLastName,
-          phone_number: userPhone,
-          state: 'NA',
+          apartment: getFallbackString(user?.apartment),
+          email: getFallbackString(userEmail),
+          floor: getFallbackString(user?.floor),
+          first_name: getFallbackString(userFirstName),
+          street: getFallbackString(user?.street),
+          building: getFallbackString(user?.building),
+          postal_code: getFallbackString(user?.postalCode || user?.postal_code),
+          city: getFallbackString(user?.city),
+          country: getFallbackString(user?.country),
+          last_name: getFallbackString(userLastName),
+          phone_number: getFallbackString(userPhone),
+          state: getFallbackString(user?.state),
         },
         currency: finalCurrency,
         integration_id: this.integrationId,

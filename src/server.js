@@ -236,6 +236,27 @@ const startServer = async () => {
     initPaymentExpiryJob();
     initSubscriptionExpiryJob();
     initKycCleanupJob();
+
+    // Programmatically initialize localtunnel in development
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        const localtunnel = require('localtunnel');
+        (async () => {
+          try {
+            const tunnel = await localtunnel({ port: PORT, subdomain: 'aqario-luxe-eslam' });
+            console.log(`[Localtunnel] Tunnel active at: ${tunnel.url}`);
+
+            tunnel.on('close', () => {
+              console.log('[Localtunnel] Tunnel has closed cleanly.');
+            });
+          } catch (tunnelErr) {
+            console.error('[Localtunnel] Failed to initialize tunnel:', tunnelErr.message);
+          }
+        })();
+      } catch (requireErr) {
+        console.error('[Localtunnel] localtunnel package load failed:', requireErr.message);
+      }
+    }
   });
 };
 if (process.env.NODE_ENV !== 'test') {

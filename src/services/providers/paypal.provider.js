@@ -54,7 +54,7 @@ class PaypalProvider extends BaseProvider {
     this.clientId = process.env.PAYPAL_CLIENT_ID;
     this.clientSecret = process.env.PAYPAL_CLIENT_SECRET;
     this.webhookId = process.env.PAYPAL_WEBHOOK_ID;
-    this.isProduction = process.env.NODE_ENV === 'production';
+    this.isProduction = process.env.PAYPAL_MODE === 'live' || process.env.PAYPAL_MODE === 'production' || process.env.NODE_ENV === 'production';
     this.apiUrl = this.isProduction
       ? 'https://api.paypal.com/v2'
       : 'https://api-m.sandbox.paypal.com/v2';
@@ -76,6 +76,12 @@ class PaypalProvider extends BaseProvider {
 
       logger.info(`[PayPal] Creating payment: ${paymentId}, amount: ${amount}`);
 
+      let finalAmount = amount;
+      if (!this.isProduction && amount > 10000) {
+        finalAmount = 100;
+        logger.info(`[PayPal] Capped sandbox payment amount to ${finalAmount} USD (original: ${amount})`);
+      }
+
       // Step 1: Get access token
       const accessToken = await this.getAccessToken();
 
@@ -86,11 +92,11 @@ class PaypalProvider extends BaseProvider {
           {
             amount: {
               currency_code: currency || 'USD',
-              value: String(amount),
+              value: String(finalAmount),
               breakdown: {
                 item_total: {
                   currency_code: currency || 'USD',
-                  value: String(amount),
+                  value: String(finalAmount),
                 },
               },
             },
@@ -100,7 +106,7 @@ class PaypalProvider extends BaseProvider {
                 name: propertyName,
                 unit_amount: {
                   currency_code: currency || 'USD',
-                  value: String(amount),
+                  value: String(finalAmount),
                 },
                 quantity: '1',
               },
@@ -109,8 +115,8 @@ class PaypalProvider extends BaseProvider {
           },
         ],
         application_context: {
-          return_url: `${process.env.APP_URL || 'http://localhost:3000'}/checkout/success`,
-          cancel_url: `${process.env.APP_URL || 'http://localhost:3000'}/checkout/cancel`,
+          return_url: `${process.env.CLIENT_URL || 'http://localhost:4200'}/payment/success?bookingId=${data.bookingId}`,
+          cancel_url: `${process.env.CLIENT_URL || 'http://localhost:4200'}/payment/failed?bookingId=${data.bookingId}`,
           brand_name: 'Real Estate Platform',
           user_action: 'PAY_NOW',
           payment_method: {

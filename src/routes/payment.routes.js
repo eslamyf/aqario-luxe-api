@@ -46,6 +46,12 @@ router.post(
 );
 
 router.post(
+  '/paypal/capture',
+  protect,
+  paymentController.capturePaypalOrder
+);
+
+router.post(
   '/promotion-checkout',
   protect,
   requireKYC,

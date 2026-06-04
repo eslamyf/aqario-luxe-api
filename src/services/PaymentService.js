@@ -112,17 +112,36 @@ class PaymentService {
         );
       }
 
+      let finalCurrency = property.currency || 'EGP';
+      let finalPropertyPrice = propertyPrice;
+      let finalPlatformFee = platformFee;
+      let finalTotalAmount = totalAmount;
+      let finalNetAmount = netAmount;
+
+      if (paymentMethod === 'paypal') {
+        // PayPal requires USD. Convert from EGP to USD if property is in EGP.
+        if (finalCurrency.toUpperCase() === 'EGP') {
+          const exchangeRate = 50.0;
+          finalCurrency = 'USD';
+          finalPropertyPrice = Math.round((propertyPrice / exchangeRate) * 100) / 100;
+          finalPlatformFee = Math.round((platformFee / exchangeRate) * 100) / 100;
+          finalTotalAmount = Math.round((totalAmount / exchangeRate) * 100) / 100;
+          finalNetAmount = Math.round((netAmount / exchangeRate) * 100) / 100;
+          logger.info(`[Payment] PayPal payment: Converted EGP to USD. Price: ${finalPropertyPrice}, Fee: ${finalPlatformFee}, Total: ${finalTotalAmount}`);
+        }
+      }
+
       // 4. Create payment record (status: pending)
       const payment = new Payment({
         user: userId,
         property: property._id,
         booking: bookingId,
-        propertyPrice,
-        platformFee,
-        netAmount,
-        totalAmount,
+        propertyPrice: finalPropertyPrice,
+        platformFee: finalPlatformFee,
+        netAmount: finalNetAmount,
+        totalAmount: finalTotalAmount,
         paymentMethod,
-        currency: property.currency || 'EGP',
+        currency: finalCurrency,
         status: 'pending',
         expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min
         ipAddress,
@@ -188,8 +207,9 @@ class PaymentService {
    * CRITICAL: Idempotency guard prevents webhook from processing twice
    */
   async verifyPayment(paymentId, webhookData = null) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const useTransaction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test';
+    const session = useTransaction ? await mongoose.startSession() : null;
+    if (session) session.startTransaction();
 
     try {
       logger.info(`[Payment] Verifying payment: ${paymentId}`);
@@ -202,7 +222,7 @@ class PaymentService {
       // CRITICAL: Idempotency guard
       if (payment.isVerified) {
         logger.warn(`[Payment] Payment already verified (idempotency check): ${paymentId}`);
-        await session.abortTransaction();
+        if (session) await session.abortTransaction();
         return { status: 'already_verified', payment };
       }
 
@@ -210,7 +230,7 @@ class PaymentService {
       if (payment.expiresAt < new Date()) {
         payment.status = 'expired';
         await payment.save({ session });
-        await session.commitTransaction();
+        if (session) await session.commitTransaction();
         logger.warn(`[Payment] Payment expired: ${paymentId}`);
         throw new Error('Payment expired');
       }
@@ -229,7 +249,7 @@ class PaymentService {
       if (!verified.success) {
         payment.status = 'failed';
         await payment.save({ session });
-        await session.commitTransaction();
+        if (session) await session.commitTransaction();
         logger.error(`[Payment] Verification failed for payment: ${paymentId}`);
         throw new Error('Payment verification failed');
       }
@@ -263,7 +283,7 @@ class PaymentService {
         { session }
       );
 
-      await session.commitTransaction();
+      if (session) await session.commitTransaction();
 
       // Emit event for workers/webhooks (e.g., send confirmation email)
       logger.info(`[Payment] Transaction complete. Booking ${booking._id} marked as PAID`);
@@ -274,11 +294,11 @@ class PaymentService {
         booking,
       };
     } catch (err) {
-      await session.abortTransaction();
+      if (session) await session.abortTransaction();
       logger.error('[Payment] verifyPayment error:', err);
       throw err;
     } finally {
-      session.endSession();
+      if (session) session.endSession();
     }
   }
 
@@ -472,6 +492,52 @@ class PaymentService {
       };
     } catch (err) {
       logger.error('[Payment] initiatePromotion error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Capture and execute approved PayPal payment order
+   */
+  async capturePaypalOrder(bookingId, token, payerId, userId) {
+    try {
+      logger.info(`[PaymentService] capturePaypalOrder for booking: ${bookingId}, token: ${token}`);
+
+      // 1. Find the pending payment record for this booking & user
+      const payment = await Payment.findOne({
+        booking: bookingId,
+        user: userId,
+        paymentMethod: 'paypal',
+        status: 'pending',
+      });
+
+      if (!payment) {
+        // If it's already paid, return success (idempotent)
+        const alreadyPaid = await Payment.findOne({
+          booking: bookingId,
+          user: userId,
+          paymentMethod: 'paypal',
+          status: 'paid',
+        });
+        if (alreadyPaid) {
+          logger.info(`[PaymentService] PayPal order already captured previously: ${token}`);
+          return { success: true, payment: alreadyPaid };
+        }
+        throw new Error('Pending PayPal payment record not found for this booking');
+      }
+
+      // If the client PayerID is provided, store it in metadata
+      if (payerId) {
+        payment.metadata = { ...payment.metadata, payerId };
+        await payment.save();
+      }
+
+      // 2. Call verifyPayment. It retrieves order details, captures order, 
+      // and atomically marks both payment and booking as PAID in a transaction.
+      const result = await this.verifyPayment(payment._id);
+      return result;
+    } catch (err) {
+      logger.error('[PaymentService] capturePaypalOrder error:', err);
       throw err;
     }
   }
