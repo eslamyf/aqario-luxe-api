@@ -7,7 +7,7 @@ async function verifyUser() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
     const email = 'buyer_test@gmail.com';
-    const user = await User.findOneAndUpdate({ email }, { isVerified: true }, { new: true });
+    const user = await User.findOneAndUpdate({ email }, { isVerified: true }, { returnDocument: 'after' });
     if (user) {
       console.log(`✅ User ${email} verified successfully!`);
     } else {

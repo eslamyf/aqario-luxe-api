@@ -187,4 +187,13 @@ router.post(
   paymentController.refundPayment
 );
 
+// ─────────────────────────────────────────────────────────────────
+// PAYOUT ENDPOINTS
+// ─────────────────────────────────────────────────────────────────
+router.post('/payout', protect, paymentController.requestPayout);
+router.get('/payouts', protect, paymentController.getPayouts);
+
+router.get('/admin/payouts', protect, restrictTo('admin'), paymentController.adminGetPayouts);
+router.patch('/admin/payouts/:id', protect, restrictTo('admin'), paymentController.adminUpdatePayout);
+
 module.exports = router;

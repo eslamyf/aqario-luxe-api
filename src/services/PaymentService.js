@@ -272,8 +272,9 @@ class PaymentService {
         {
           paymentStatus: 'paid',
           paidAmount: payment.totalAmount,
+          status: 'completed',
         },
-        { session, new: true }
+        { session, returnDocument: 'after' }
       );
 
       // Update property metadata (increment successful bookings)
@@ -282,6 +283,38 @@ class PaymentService {
         { $inc: { successfulBookings: 1 } },
         { session }
       );
+
+      // ── Automated Owner Payout Split Logic ──
+      const propertyDoc = await Property.findById(payment.property).session(session);
+      if (propertyDoc) {
+        const ownerId = propertyDoc.owner;
+        const netAmount = payment.netAmount;
+        const platformFee = payment.platformFee;
+
+        // 1. Update the owner's cumulative balance
+        await User.findByIdAndUpdate(
+          ownerId,
+          { $inc: { cumulativeBalance: netAmount } },
+          { session }
+        );
+
+        // 2. Create a new transaction record linked to the owner
+        const Transaction = require('../models/transaction.model');
+        await Transaction.create([{
+          owner: ownerId,
+          property: propertyDoc._id,
+          booking: payment.booking,
+          payment: payment._id,
+          amount: payment.totalAmount,
+          commission: platformFee,
+          netAmount: netAmount,
+          currency: payment.currency || 'EGP',
+          status: 'completed',
+          type: 'booking_income'
+        }], { session });
+
+        logger.info(`[Payout Split] Credited owner ${ownerId} balance with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
+      }
 
       if (session) await session.commitTransaction();
 

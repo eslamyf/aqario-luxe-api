@@ -352,18 +352,50 @@ exports.capturePaypalOrder = async (req, res, next) => {
       payment.metadata = { ...payment.metadata, payerId, captureData };
       await payment.save();
 
-      // Update booking status
-      await Booking.findByIdAndUpdate(bookingId, {
+      // Update booking status (and advance status to completed)
+      const booking = await Booking.findByIdAndUpdate(bookingId, {
         paymentStatus: 'paid', // matches Booking model schema validation
         paidAmount: payment.totalAmount,
-      });
+        status: 'completed',
+      }, { new: true });
 
       // Update property statistics
-      await Property.findByIdAndUpdate(payment.property, {
+      const propertyDoc = await Property.findByIdAndUpdate(payment.property, {
         $inc: { successfulBookings: 1 },
-      });
+      }, { new: true });
 
-      logger.info(`[PayPal Capture] Booking ${bookingId} successfully captured & marked paid.`);
+      // ── Automated Owner Payout Split Logic for PayPal Capture ──
+      if (propertyDoc) {
+        const User = require('../models/user.model');
+        const Transaction = require('../models/transaction.model');
+        const ownerId = propertyDoc.owner;
+        const netAmount = payment.netAmount;
+        const platformFee = payment.platformFee;
+
+        // 1. Update the owner's cumulative balance
+        await User.findByIdAndUpdate(
+          ownerId,
+          { $inc: { cumulativeBalance: netAmount } }
+        );
+
+        // 2. Create a new transaction record linked to the owner
+        await Transaction.create([{
+          owner: ownerId,
+          property: propertyDoc._id,
+          booking: payment.booking,
+          payment: payment._id,
+          amount: payment.totalAmount,
+          commission: platformFee,
+          netAmount: netAmount,
+          currency: payment.currency || 'EGP',
+          status: 'completed',
+          type: 'booking_income'
+        }]);
+
+        logger.info(`[Payout Split - PayPal Capture] Credited owner ${ownerId} balance with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
+      }
+
+      logger.info(`[PayPal Capture] Booking ${bookingId} successfully captured & marked completed.`);
 
       return res.status(200).json({
         status: 'success',
@@ -383,6 +415,176 @@ exports.capturePaypalOrder = async (req, res, next) => {
   } catch (err) {
     logger.error('[PayPal Capture] Unexpected controller exception:', err);
     next(err);
+  }
+};
+
+/**
+ * POST /api/v1/payments/payout
+ * Request withdrawal of collected balance (owner/agent only)
+ */
+exports.requestPayout = async (req, res, next) => {
+  try {
+    const Payout = require('../models/payout.model');
+    const { amount, method, accountDetails } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Invalid payout amount',
+      });
+    }
+
+    const validMethods = ['paymob_wallet', 'paypal'];
+    if (!validMethods.includes(method)) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Invalid payout method',
+      });
+    }
+
+    if (!accountDetails) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Account details are required',
+      });
+    }
+
+    // Calculate pending payouts to determine available balance
+    const activePendingPayouts = await Payout.aggregate([
+      { $match: { ownerId: req.user._id, status: 'pending' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const pendingTotal = activePendingPayouts[0]?.total || 0;
+    const available = (req.user.cumulativeBalance || 0) - pendingTotal;
+
+    if (available < amount) {
+      return res.status(400).json({
+        status: 'fail',
+        message: `Insufficient available balance. Available: ${available} EGP. Pending: ${pendingTotal} EGP.`,
+      });
+    }
+
+    const payout = await Payout.create({
+      ownerId: req.user._id,
+      amount,
+      method,
+      accountDetails,
+      status: 'pending',
+    });
+
+    logger.info(`[Payout] User ${req.user._id} requested withdrawal of ${amount} EGP via ${method}`);
+
+    res.status(201).json({
+      status: 'success',
+      data: { payout },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/payments/payouts
+ * Get active user's payout history
+ */
+exports.getPayouts = async (req, res, next) => {
+  try {
+    const Payout = require('../models/payout.model');
+    const payouts = await Payout.find({ ownerId: req.user._id }).sort({ created_at: -1 });
+
+    res.status(200).json({
+      status: 'success',
+      results: payouts.length,
+      data: { payouts },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/payments/admin/payouts
+ * List all payouts (admin only)
+ */
+exports.adminGetPayouts = async (req, res, next) => {
+  try {
+    const Payout = require('../models/payout.model');
+    const payouts = await Payout.find()
+      .populate('ownerId', 'name email photo')
+      .sort({ created_at: -1 });
+
+    res.status(200).json({
+      status: 'success',
+      results: payouts.length,
+      data: { payouts },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/payments/admin/payouts/:id
+ * Approve or reject payout request (admin only)
+ */
+exports.adminUpdatePayout = async (req, res, next) => {
+  const mongoose = require('mongoose');
+  const useTransaction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
+
+  try {
+    const Payout = require('../models/payout.model');
+    const User = require('../models/user.model');
+    const { status } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Status must be either approved or rejected',
+      });
+    }
+
+    const payout = await Payout.findById(req.params.id).session(session);
+    if (!payout) {
+      throw new Error('Payout request not found');
+    }
+
+    if (payout.status !== 'pending') {
+      throw new Error('Payout request is already resolved');
+    }
+
+    if (status === 'approved') {
+      // Fetch owner balance inside the session
+      const owner = await User.findById(payout.ownerId).session(session);
+      if (!owner || owner.cumulativeBalance < payout.amount) {
+        throw new Error('Owner has insufficient cumulative balance to complete this payout');
+      }
+
+      // Decrement the balance
+      await User.findByIdAndUpdate(
+        payout.ownerId,
+        { $inc: { cumulativeBalance: -payout.amount } },
+        { session }
+      );
+    }
+
+    payout.status = status;
+    await payout.save({ session });
+
+    if (session) await session.commitTransaction();
+
+    logger.info(`[Payout Admin] Payout request ${payout._id} for ${payout.amount} EGP was ${status.toUpperCase()} by admin ${req.user._id}`);
+
+    res.status(200).json({
+      status: 'success',
+      data: { payout },
+    });
+  } catch (err) {
+    if (session) await session.abortTransaction();
+    next(err);
+  } finally {
+    if (session) session.endSession();
   }
 };
 

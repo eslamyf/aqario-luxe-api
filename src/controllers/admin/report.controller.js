@@ -53,7 +53,7 @@ exports.reviewReport = asyncHandler(async (req, res, next) => {
   const report = await Report.findByIdAndUpdate(
     req.params.id,
     { status, adminNote, reviewedBy: req.user._id, reviewedAt: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('reporter', '_id name');
 
   if (!report) return next(new AppError(req.t('REPORT.NOT_FOUND'), 404));

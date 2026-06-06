@@ -81,6 +81,7 @@ const kycRoutes = require('./routes/kyc.routes');
 const auctionRoutes = require('./routes/auction.routes');
 const bidRoutes = require('./routes/bid.routes');
 const agentRoutes = require('./routes/agent.routes');
+const chatRoutes = require('./routes/chat.routes');
 const CLIENT_URL = process.env.CLIENT_URL;
 
 if (!CLIENT_URL) {
@@ -188,6 +189,7 @@ app.use(`${API}/subscriptions`, subscriptionRoutes);
 app.use(`${API}/auctions`, auctionRoutes);
 app.use(`${API}/bids`, bidRoutes);
 app.use(`${API}/agents`, agentRoutes);
+app.use(`${API}/chats`, chatRoutes);
 
 // Root
 app.get('/', (req, res) => res.json({

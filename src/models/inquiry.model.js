@@ -6,22 +6,26 @@ const inquirySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Sender is required'],
+      alias: 'senderId',
     },
     receiver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Receiver is required'],
+      alias: 'ownerId',
     },
     property: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Property',
       required: [true, 'Property is required'],
+      alias: 'propertyId',
     },
     content: {
       type: String,
       required: [true, 'Message content is required'],
       trim: true,
       maxlength: [1000, 'Message cannot exceed 1000 characters'],
+      alias: 'message',
     },
     isRead: { type: Boolean, default: false },
     // FIX — Add replies system for inquiry responses

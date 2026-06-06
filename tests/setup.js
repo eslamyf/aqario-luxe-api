@@ -62,7 +62,7 @@ global.createVerifiedUser = async (request, app, { name, email, password, role =
   }
 
   // 2. Mark as verified, set role, and set KYC status directly in DB
-  const user = await User.findOneAndUpdate({ email }, { isVerified: true, role, kycStatus }, { new: true });
+  const user = await User.findOneAndUpdate({ email }, { isVerified: true, role, kycStatus }, { returnDocument: 'after' });
 
   if (role === 'owner' || role === 'agent') {
     const Subscription = require('../src/models/subscription.model');

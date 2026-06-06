@@ -83,6 +83,58 @@ module.exports = (httpServer) => {
       socket.leave(`auction_${auctionId}`);
     });
 
+    // Join/leave chat rooms
+    socket.on('joinChat', (chatId) => {
+      socket.join(`chat_${chatId}`);
+      logger.info(`🗣️ User joined chat room: chat_${chatId}`);
+    });
+
+    socket.on('leaveChat', (chatId) => {
+      socket.leave(`chat_${chatId}`);
+      logger.info(`🗣️ User left chat room: chat_${chatId}`);
+    });
+
+    socket.on('sendMessage', async (payload) => {
+      try {
+        const { chatId, text, messageType, fileUrl } = payload;
+        const Message = require('../models/message.model');
+        const Chat = require('../models/chat.model');
+        
+        const message = await Message.create({
+          chatId,
+          sender: socket.user.id,
+          text: text || '',
+          messageType: messageType || 'text',
+          fileUrl: fileUrl || null
+        });
+
+        // Update Chat lastMessage
+        await Chat.findByIdAndUpdate(chatId, { lastMessage: message._id });
+
+        // Populate sender info
+        await message.populate('sender', 'name email photo');
+
+        // Emit to room
+        _io.to(`chat_${chatId}`).emit('newMessage', message);
+        
+        // Also notify user room for offline/background users
+        const chat = await Chat.findById(chatId);
+        if (chat && chat.participants) {
+          chat.participants.forEach(pId => {
+            if (pId.toString() !== socket.user.id.toString()) {
+              _io.to(`user_${pId}`).emit('chatNotification', {
+                chatId,
+                message: message.text || `Sent an attachment`,
+                sender: message.sender
+              });
+            }
+          });
+        }
+      } catch (err) {
+        socket.emit('error', { message: err.message });
+      }
+    });
+
     // ── disconnect ───────────────────────────────────────────
     socket.on('disconnect', (reason) => {
       logger.info(`❌ Socket disconnected: ${socket.id} — reason: ${reason}`);

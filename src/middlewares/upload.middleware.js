@@ -156,9 +156,42 @@ const uploadOwnershipFileToCloud = async (req, _res, next) => {
   }
 };
 
+const uploadAnyType = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
+
+const uploadChatMediaToCloud = async (req, _res, next) => {
+  try {
+    if (!req.file) {
+      throw new AppError('No file provided', 400);
+    }
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.jfif'].includes(ext);
+    
+    // Auto resource type detection in Cloudinary uploads audio, video, raw documents seamlessly
+    const uploadedUrl = await uploadToCloudinary(req.file.buffer, 'real-estate/chat');
+    
+    req.body.fileUrl = uploadedUrl;
+    req.body.fileName = req.file.originalname;
+    
+    if (isImage) {
+      req.body.fileType = 'image';
+    } else if (['.mp4', '.mov', '.avi', '.webm'].includes(ext)) {
+      req.body.fileType = 'video';
+    } else if (['.mp3', '.wav', '.ogg', '.m4a', '.webm'].includes(ext) || req.file.mimetype.startsWith('audio/')) {
+      req.body.fileType = 'audio';
+    } else {
+      req.body.fileType = 'file';
+    }
+    
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   uploadPropertyImages: [handleMulterError(upload.array('images', 10)), uploadImagesToCloud],
   uploadSingleImage: [handleMulterError(upload.single('photo')), uploadImagesToCloud],
   uploadKYCImage: [handleMulterError(upload.single('image')), uploadKYCImageToCloud],
   uploadOwnershipFile: [handleMulterError(uploadDoc.single('file')), uploadOwnershipFileToCloud],
+  uploadChatAttachment: [handleMulterError(uploadAnyType.single('file')), uploadChatMediaToCloud],
 };

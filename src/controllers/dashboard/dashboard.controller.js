@@ -882,20 +882,69 @@ exports.buyerBookings = asyncHandler(async (req, res) => {
 
 exports.buyerPayments = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPaginationParams(req.query);
-  const [payments, total] = await Promise.all([
-    Payment.find({ user: req.user._id })
-      .skip(skip)
-      .limit(limit)
-      .populate({
-        path: 'booking',
-        select: 'start_date end_date amount status property_id',
-        populate: { path: 'property_id', select: 'title price location images' }
-      })
-      .sort('-createdAt')
-      .lean(),
-    Payment.countDocuments({ user: req.user._id })
-  ]);
-  res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: payments.length, data: { payments } });
+
+  if (req.user.role === 'owner' || req.user.role === 'agent') {
+    const Transaction = require('../../models/transaction.model');
+    const [transactions, total] = await Promise.all([
+      Transaction.find({ owner: req.user._id })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: 'booking',
+          select: 'start_date end_date amount status'
+        })
+        .populate({
+          path: 'property',
+          select: 'title price location images'
+        })
+        .populate({
+          path: 'payment',
+          select: 'paymentMethod'
+        })
+        .sort('-createdAt')
+        .lean(),
+      Transaction.countDocuments({ owner: req.user._id })
+    ]);
+
+    // Map to shape expected by UserPaymentsComponent
+    const formattedPayments = transactions.map(t => ({
+      _id: t._id,
+      createdAt: t.createdAt,
+      property: t.property,
+      booking: t.booking,
+      paymentMethod: t.payment?.paymentMethod || 'card',
+      totalAmount: t.netAmount, // Net earnings for the owner
+      commission: t.commission,
+      buyerPaid: t.amount,
+      currency: t.currency || 'EGP',
+      status: t.status === 'completed' ? 'paid' : t.status,
+    }));
+
+    return res.status(200).json({
+      status: 'success',
+      page,
+      total,
+      pages: Math.ceil(total / limit),
+      results: formattedPayments.length,
+      data: { payments: formattedPayments }
+    });
+  } else {
+    const [payments, total] = await Promise.all([
+      Payment.find({ user: req.user._id })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: 'booking',
+          select: 'start_date end_date amount status property_id',
+          populate: { path: 'property_id', select: 'title price location images' }
+        })
+        .sort('-createdAt')
+        .lean(),
+      Payment.countDocuments({ user: req.user._id })
+    ]);
+
+    res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: payments.length, data: { payments } });
+  }
 });
 
 exports.buyerFavorites = asyncHandler(async (req, res) => {

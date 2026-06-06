@@ -110,7 +110,7 @@ router.patch('/:id/read', async (req, res, next) => {
     const notif = await Notification.findOneAndUpdate(
       { _id: req.params.id, userId: req.user._id },
       { isRead: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!notif) return res.status(404).json({ status: 'fail', message: req.t('COMMON.PATH_NOT_FOUND', { path: 'notification' }) });
     res.status(200).json({ status: 'success', data: { notification: notif } });

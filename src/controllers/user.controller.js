@@ -186,8 +186,6 @@ exports.getMe = asyncHandler(async (req, res) => {
   user.photo = user.photo || '';
   user.bio = user.bio || '';
 
-  console.log(`[DEBUG] getMe for ${user.email}: Role=${user.role}, Properties=${dashboard.properties?.length || 0}`);
-  
   res.status(200).json({
     status: 'success',
     data: {
@@ -221,7 +219,7 @@ exports.updateMe = asyncHandler(async (req, res) => {
   if (bio !== undefined) updateData.bio = bio;
 
   const user = await User.findByIdAndUpdate(req.user._id, { $set: updateData }, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true,
   }).lean();
 

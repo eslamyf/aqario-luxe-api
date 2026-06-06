@@ -134,3 +134,15 @@ exports.deleteInquiry = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getOwnerInquiries = async (req, res, next) => {
+  try {
+    const inquiries = await Inquiry.find({ receiver: req.user._id })
+      .populate('sender', 'name email photo phone')
+      .populate('property', 'title price location images')
+      .sort('-createdAt');
+    res.status(200).json({ status: 'success', results: inquiries.length, data: { inquiries } });
+  } catch (err) {
+    next(err);
+  }
+};

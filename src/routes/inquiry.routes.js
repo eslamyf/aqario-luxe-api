@@ -90,6 +90,7 @@ router.get('/inbox', inquiryController.getMyInbox);
  *       401: { $ref: '#/components/responses/401' }
  */
 router.get('/sent', inquiryController.getMySentInquiries);
+router.get('/owner', inquiryController.getOwnerInquiries);
 
 /**
  * @swagger

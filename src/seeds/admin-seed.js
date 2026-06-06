@@ -34,7 +34,7 @@ const seedAdmin = async () => {
     const admin = await User.findOneAndUpdate(
       { email },
       { $set: adminData },
-      { new: true, upsert: true, runValidators: true }
+      { returnDocument: 'after', upsert: true, runValidators: true }
     );
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

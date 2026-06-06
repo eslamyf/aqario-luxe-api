@@ -20,13 +20,16 @@ i18next
       loadPath: path.join(__dirname, '..', 'locales', '{{lng}}', '{{ns}}.json'),
     },
 
-    // ── Interpolation ──────────────────────────────────────
     interpolation: {
       escapeValue: true,           // Prevent XSS
       format: function(value, format, lng) {
         if (value && typeof value === 'object') {
-          if ('en' in value || 'ar' in value) {
-            return value[lng] || value.en || value.ar || '';
+          const plainValue = typeof value.toObject === 'function'
+            ? value.toObject()
+            : (typeof value.toJSON === 'function' ? value.toJSON() : value);
+
+          if (plainValue && ('en' in plainValue || 'ar' in plainValue)) {
+            return plainValue[lng] || plainValue.en || plainValue.ar || '';
           }
         }
         return value;

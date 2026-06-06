@@ -56,7 +56,7 @@ async function seedKYC() {
             authProvider: 'local'
           }
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     }
 

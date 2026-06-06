@@ -10,7 +10,7 @@ async function approveKYC() {
     const user = await User.findOneAndUpdate(
       { email },
       { kycStatus: 'approved', isVerified: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (user) {
       console.log(`✅ KYC for ${email} approved successfully!`);
