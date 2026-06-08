@@ -8,6 +8,14 @@ const restrictTo = require('../middlewares/restrictTo.middleware');
 const { idempotencyMiddleware } = require('../middlewares/idempotency.middleware');
 
 // ─────────────────────────────────────────────────────────────────
+// PAYOUT ENDPOINTS
+// ─────────────────────────────────────────────────────────────────
+router.post('/payout', protect, paymentController.requestPayout);
+router.post('/payouts', protect, paymentController.requestPayout);
+router.get('/admin/payouts', protect, restrictTo('admin'), paymentController.adminGetPayouts);
+router.patch('/admin/payouts/:id', protect, restrictTo('admin'), paymentController.adminUpdatePayout);
+
+// ─────────────────────────────────────────────────────────────────
 // USER ENDPOINTS (protected + KYC required)
 // ─────────────────────────────────────────────────────────────────
 
@@ -106,6 +114,7 @@ router.post('/webhook/paypal', webhookController.handlePaypalWebhook);
 // ─────────────────────────────────────────────────────────────────
 // DYNAMIC ROUTES (must be after specific routes)
 // ─────────────────────────────────────────────────────────────────
+router.get('/payouts', protect, paymentController.getPayouts);
 router.get('/:id', protect, paymentController.getPaymentStatus);
 
 /**
@@ -186,14 +195,5 @@ router.post(
   restrictTo('admin'),
   paymentController.refundPayment
 );
-
-// ─────────────────────────────────────────────────────────────────
-// PAYOUT ENDPOINTS
-// ─────────────────────────────────────────────────────────────────
-router.post('/payout', protect, paymentController.requestPayout);
-router.get('/payouts', protect, paymentController.getPayouts);
-
-router.get('/admin/payouts', protect, restrictTo('admin'), paymentController.adminGetPayouts);
-router.patch('/admin/payouts/:id', protect, restrictTo('admin'), paymentController.adminUpdatePayout);
 
 module.exports = router;

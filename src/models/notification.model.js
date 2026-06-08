@@ -22,7 +22,8 @@ const notificationSchema = new mongoose.Schema(
     targetUrl: { type: String, default: null },
     metadata: {
       type: { type: String, default: null },
-      referenceId: { type: String, default: null }
+      referenceId: { type: String, default: null },
+      chatId: { type: String, default: null }
     },
   },
   { timestamps: true }

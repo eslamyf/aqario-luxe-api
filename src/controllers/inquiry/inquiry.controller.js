@@ -1,5 +1,7 @@
 const Inquiry  = require('../../models/inquiry.model');
 const Property = require('../../models/property.model');
+const Chat     = require('../../models/chat.model');
+const Message  = require('../../models/message.model');
 const { createNotification } = require('../../utils/notificationHelper');
 
 exports.sendInquiry = async (req, res, next) => {
@@ -107,12 +109,49 @@ exports.replyToInquiry = async (req, res, next) => {
     inquiry.isRead = true;
     await inquiry.save();
 
-    // Notify sender
+    // Find or atomically initialize a verified Chat room document mapping the participants
+    let chat = await Chat.findOne({
+      participants: { $all: [inquiry.sender, inquiry.receiver], $size: 2 }
+    });
+    if (!chat) {
+      chat = await Chat.create({
+        participants: [inquiry.sender, inquiry.receiver],
+        inquiryId: inquiry._id,
+      });
+    }
+
+    // Create message document representing this reply
+    const savedMessage = await Message.create({
+      chatId: chat._id,
+      sender: req.user._id,
+      text: message,
+      messageType: 'text',
+    });
+
+    // Populate sender info for frontend live rendering
+    await savedMessage.populate('sender', 'name email photo');
+
+    // Update Chat lastMessage
+    chat.lastMessage = savedMessage._id;
+    await chat.save();
+
+    // Emit the saved message instantly to the room channel
+    if (req.io) {
+      req.io.to(`chat_${chat._id}`).emit('newMessage', savedMessage);
+    }
+
+    // Notify sender with populated metadata and targetUrl
     await createNotification(req.io, inquiry.sender, {
       type:    'inquiry',
       title:   req.t('NOTIFICATION.INQUIRY_REPLY'),
       message: req.t('NOTIFICATION.INQUIRY_REPLY_MSG'),
-      link:    `/inquiries/${inquiry._id}`,
+      link:    `/dashboard/chat/${chat._id}`,
+      targetUrl: `/dashboard/chat/${chat._id}`,
+      metadata: {
+        type: 'inquiry',
+        referenceId: inquiry._id.toString(),
+        chatId: chat._id.toString()
+      }
     }).catch(() => {});
 
     res.status(200).json({ status: 'success', message: req.t('INQUIRY.REPLY_SENT'), data: { inquiry } });

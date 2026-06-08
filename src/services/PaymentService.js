@@ -73,9 +73,9 @@ class PaymentService {
       }
 
       // Platform service fee calculation (centralized helper)
-      const platformFee = this.calculatePlatformFee(propertyPrice);
-      const totalAmount = propertyPrice + platformFee;
-      const netAmount = propertyPrice; // Owner receives the property price, platform takes the fee
+      const totalAmount = propertyPrice;
+      const platformFee = this.calculatePlatformFee(totalAmount);
+      const netAmount = totalAmount - platformFee;
 
       logger.info(`[Payment] Amount breakdown - Price: ${propertyPrice}, Fee: ${platformFee}, Total: ${totalAmount}`);
 
@@ -112,24 +112,11 @@ class PaymentService {
         );
       }
 
-      let finalCurrency = property.currency || 'EGP';
+      let finalCurrency = 'USD';
       let finalPropertyPrice = propertyPrice;
       let finalPlatformFee = platformFee;
       let finalTotalAmount = totalAmount;
       let finalNetAmount = netAmount;
-
-      if (paymentMethod === 'paypal') {
-        // PayPal requires USD. Convert from EGP to USD if property is in EGP.
-        if (finalCurrency.toUpperCase() === 'EGP') {
-          const exchangeRate = 50.0;
-          finalCurrency = 'USD';
-          finalPropertyPrice = Math.round((propertyPrice / exchangeRate) * 100) / 100;
-          finalPlatformFee = Math.round((platformFee / exchangeRate) * 100) / 100;
-          finalTotalAmount = Math.round((totalAmount / exchangeRate) * 100) / 100;
-          finalNetAmount = Math.round((netAmount / exchangeRate) * 100) / 100;
-          logger.info(`[Payment] PayPal payment: Converted EGP to USD. Price: ${finalPropertyPrice}, Fee: ${finalPlatformFee}, Total: ${finalTotalAmount}`);
-        }
-      }
 
       // 4. Create payment record (status: pending)
       const payment = new Payment({
@@ -277,6 +264,29 @@ class PaymentService {
         { session, returnDocument: 'after' }
       );
 
+      // ── Deduplicate Booking & Payments for same User/Property pair ──
+      if (booking) {
+        const duplicateBookings = await Booking.find({
+          user_id: booking.user_id,
+          property_id: booking.property_id,
+          _id: { $ne: booking._id },
+          status: { $in: ['pending', 'approved'] }
+        }).session(session);
+
+        if (duplicateBookings.length > 0) {
+          const duplicateBookingIds = duplicateBookings.map(b => b._id);
+          await Booking.deleteMany(
+            { _id: { $in: duplicateBookingIds } },
+            { session }
+          );
+          await Payment.deleteMany(
+            { booking: { $in: duplicateBookingIds }, status: 'pending' },
+            { session }
+          );
+          logger.info(`[Deduplication - Verify Payment] Purged ${duplicateBookingIds.length} duplicate bookings and their pending payments.`);
+        }
+      }
+
       // Update property metadata (increment successful bookings)
       await Property.findByIdAndUpdate(
         payment.property,
@@ -291,12 +301,17 @@ class PaymentService {
         const netAmount = payment.netAmount;
         const platformFee = payment.platformFee;
 
-        // 1. Update the owner's cumulative balance
-        await User.findByIdAndUpdate(
-          ownerId,
-          { $inc: { cumulativeBalance: netAmount } },
-          { session }
-        );
+        // 1. Update the owner's USD balance
+        await User.updateOne({ _id: ownerId }, { $inc: { balance_USD: netAmount } }).session(session);
+        const updatedUser = await User.findById(ownerId).session(session);
+
+        // Emit real-time event hook
+        try {
+          const socketIO = require('../config/socket').getIO();
+          socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { balance_USD: updatedUser.balance_USD });
+        } catch (socketErr) {
+          logger.error('[PaymentService] Failed to emit socket balance update:', socketErr.message);
+        }
 
         // 2. Create a new transaction record linked to the owner
         const Transaction = require('../models/transaction.model');
@@ -308,12 +323,12 @@ class PaymentService {
           amount: payment.totalAmount,
           commission: platformFee,
           netAmount: netAmount,
-          currency: payment.currency || 'EGP',
+          currency: 'USD',
           status: 'completed',
           type: 'booking_income'
         }], { session });
 
-        logger.info(`[Payout Split] Credited owner ${ownerId} balance with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
+        logger.info(`[Payout Split] Credited owner ${ownerId} balance (balance_USD) with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
       }
 
       if (session) await session.commitTransaction();

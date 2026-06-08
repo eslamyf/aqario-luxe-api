@@ -84,12 +84,14 @@ module.exports = (httpServer) => {
     });
 
     // Join/leave chat rooms
-    socket.on('joinChat', (chatId) => {
+    socket.on('joinChat', (data) => {
+      const chatId = typeof data === 'object' && data !== null ? data.chatId : data;
       socket.join(`chat_${chatId}`);
       logger.info(`🗣️ User joined chat room: chat_${chatId}`);
     });
 
-    socket.on('leaveChat', (chatId) => {
+    socket.on('leaveChat', (data) => {
+      const chatId = typeof data === 'object' && data !== null ? data.chatId : data;
       socket.leave(`chat_${chatId}`);
       logger.info(`🗣️ User left chat room: chat_${chatId}`);
     });

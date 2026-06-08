@@ -59,11 +59,97 @@ class PaymobProvider extends BaseProvider {
 
       // MOCK for local development without real API keys
       if (this.apiKey === 'dummy_api_key') {
-        logger.info(`[Paymob] Using dummy API key, returning mock checkout URL.`);
+        logger.info(`[Paymob] Using dummy API key, executing mock database updates for booking ${data.bookingId}`);
 
-        // Auto-approve the booking payment for local testing
         const Booking = require('../../models/booking.model');
-        await Booking.findByIdAndUpdate(data.bookingId, { paymentStatus: 'paid', paidAmount: amount });
+        const Payment = require('../../models/payment.model');
+        const User = require('../../models/user.model');
+        const Transaction = require('../../models/transaction.model');
+        const Property = require('../../models/property.model');
+
+        // 1. Update booking status to completed and paymentStatus to paid
+        const booking = await Booking.findByIdAndUpdate(
+          data.bookingId,
+          { paymentStatus: 'paid', paidAmount: amount, status: 'completed' },
+          { new: true }
+        );
+
+        // ── Deduplicate Booking & Payments for same User/Property pair ──
+        if (booking) {
+          const duplicateBookings = await Booking.find({
+            user_id: booking.user_id,
+            property_id: booking.property_id,
+            _id: { $ne: booking._id },
+            status: { $in: ['pending', 'approved'] }
+          });
+
+          if (duplicateBookings.length > 0) {
+            const duplicateBookingIds = duplicateBookings.map(b => b._id);
+            await Booking.updateMany(
+              { _id: { $in: duplicateBookingIds } },
+              { $set: { status: 'cancelled' } }
+            );
+            await Payment.updateMany(
+              { booking: { $in: duplicateBookingIds }, status: 'pending' },
+              { $set: { status: 'failed' } }
+            );
+            logger.info(`[Deduplication - Mock Paymob] Cancelled ${duplicateBookingIds.length} duplicate bookings and set their pending payments to failed.`);
+          }
+        }
+
+        // 2. Find and update the corresponding Payment record
+        const payment = await Payment.findOne({ booking: data.bookingId, status: 'pending' });
+        if (payment) {
+          payment.status = 'paid';
+          payment.isVerified = true;
+          payment.transactionId = 'mock_tx_' + Date.now();
+          payment.verifiedAt = new Date();
+          await payment.save();
+
+          // 3. Update property statistics
+          const propertyDoc = await Property.findByIdAndUpdate(
+            payment.property,
+            { $inc: { successfulBookings: 1 } },
+            { new: true }
+          );
+
+          if (propertyDoc) {
+            // 4. Update the owner's USD balance (95% net revenue split)
+            const ownerId = propertyDoc.owner;
+            const netAmount = payment.netAmount;
+            const platformFee = payment.platformFee;
+
+            await User.updateOne(
+              { _id: ownerId },
+              { $inc: { balance_USD: netAmount } }
+            );
+
+            // Fetch the updated user for the socket notification
+            const updatedUser = await User.findById(ownerId);
+            try {
+              const socketIO = require('../../config/socket').getIO();
+              socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { balance_USD: updatedUser.balance_USD });
+            } catch (socketErr) {
+              logger.error('[Mock Paymob] Failed to emit socket balance update:', socketErr.message);
+            }
+
+            // 5. Create a new transaction record linked to the owner
+            await Transaction.create({
+              owner: ownerId,
+              property: propertyDoc._id,
+              booking: booking._id,
+              payment: payment._id,
+              amount: payment.totalAmount,
+              commission: platformFee,
+              netAmount: netAmount,
+              currency: 'USD',
+              status: 'completed',
+              type: 'booking_income'
+            });
+
+            logger.info(`[Payout Split - Mock Paymob] Credited owner ${ownerId} balance with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
+          }
+        }
 
         return {
           paymentKey: 'mock_payment_key_123',

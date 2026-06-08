@@ -14,6 +14,11 @@ const chatSchema = new mongoose.Schema(
       ref: 'Message',
       default: null,
     },
+    inquiryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Inquiry',
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -21,5 +26,6 @@ const chatSchema = new mongoose.Schema(
 // Indexes
 chatSchema.index({ participants: 1 });
 chatSchema.index({ updatedAt: -1 });
+chatSchema.index({ inquiryId: 1 });
 
 module.exports = mongoose.model('Chat', chatSchema);

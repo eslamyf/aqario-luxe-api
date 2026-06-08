@@ -16,7 +16,7 @@ exports.initiateChat = async (req, res, next) => {
 
     // Check if chat already exists
     let chat = await Chat.findOne({
-      participants: { $all: [req.user.id, participantId] },
+      participants: { $all: [req.user.id, participantId], $size: 2 },
     });
 
     if (!chat) {
@@ -39,7 +39,46 @@ exports.initiateChat = async (req, res, next) => {
 // Get all chats of the active user
 exports.getUserChats = async (req, res, next) => {
   try {
-    const chats = await Chat.find({
+    const Inquiry = require('../models/inquiry.model');
+    const Message = require('../models/message.model');
+
+    // 1. Scan for resolved inquiries containing replies that lack a corresponding Chat room
+    const inquiries = await Inquiry.find({
+      $or: [{ sender: req.user.id }, { receiver: req.user.id }],
+      replies: { $exists: true, $not: { $size: 0 } }
+    });
+
+    for (const inq of inquiries) {
+      let chat = await Chat.findOne({
+        participants: { $all: [inq.sender, inq.receiver], $size: 2 }
+      });
+      if (!chat) {
+        chat = await Chat.create({
+          participants: [inq.sender, inq.receiver],
+          inquiryId: inq._id
+        });
+        
+        let lastMsgId = null;
+        for (const reply of inq.replies) {
+          const msg = await Message.create({
+            chatId: chat._id,
+            sender: reply.from,
+            text: reply.message,
+            messageType: 'text',
+            createdAt: reply.createdAt
+          });
+          lastMsgId = msg._id;
+        }
+        
+        if (lastMsgId) {
+          chat.lastMessage = lastMsgId;
+          await chat.save();
+        }
+      }
+    }
+
+    // 2. Fetch all chats of the active user and merge duplicates on-the-fly
+    const rawChats = await Chat.find({
       participants: req.user.id,
     })
       .populate('participants', 'name email photo role')
@@ -48,6 +87,49 @@ exports.getUserChats = async (req, res, next) => {
         populate: { path: 'sender', select: 'name email photo' }
       })
       .sort({ updatedAt: -1 });
+
+    const chats = [];
+    const seenPairs = new Set();
+    const logger = require('../utils/logger');
+
+    for (const chat of rawChats) {
+      if (!chat.participants || chat.participants.length !== 2) {
+        chats.push(chat);
+        continue;
+      }
+      const p1 = chat.participants[0]._id.toString();
+      const p2 = chat.participants[1]._id.toString();
+      const pairKey = [p1, p2].sort().join('-');
+
+      if (seenPairs.has(pairKey)) {
+        // Duplicate chat room found. Merge messages into primary chat
+        const primaryChat = chats.find(c => {
+          const cp1 = c.participants[0]._id.toString();
+          const cp2 = c.participants[1]._id.toString();
+          return [cp1, cp2].sort().join('-') === pairKey;
+        });
+
+        if (primaryChat) {
+          try {
+            await Message.updateMany({ chatId: chat._id }, { chatId: primaryChat._id });
+            await Chat.findByIdAndDelete(chat._id);
+            logger.info(`[Chat Deduplication] Merged duplicate chat ${chat._id} into primary chat ${primaryChat._id}`);
+
+            // Re-resolve the last message of the primary chat
+            const latestMsg = await Message.findOne({ chatId: primaryChat._id }).sort({ createdAt: -1 });
+            if (latestMsg) {
+              primaryChat.lastMessage = latestMsg._id;
+              await primaryChat.save();
+            }
+          } catch (mergeErr) {
+            logger.error(`[Chat Deduplication] Error merging chat ${chat._id}:`, mergeErr);
+          }
+        }
+      } else {
+        seenPairs.add(pairKey);
+        chats.push(chat);
+      }
+    }
 
     res.status(200).json({
       status: 'success',

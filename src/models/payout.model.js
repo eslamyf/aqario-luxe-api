@@ -24,9 +24,23 @@ const payoutSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'completed', 'failed'],
       default: 'pending',
       index: true,
+    },
+    currency: {
+      type: String,
+      enum: ['USD'],
+      required: [true, 'Currency is required'],
+      default: 'USD',
+    },
+    payoutTransactionId: {
+      type: String,
+      default: null,
+    },
+    errorDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
   },
   {

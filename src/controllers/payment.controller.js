@@ -325,86 +325,130 @@ exports.capturePaypalOrder = async (req, res, next) => {
       });
     }
 
-    // 4. Update Database upon successful capture
+    // 4. Update Database upon successful capture within a transaction session
     if (captureData.status === 'COMPLETED' || captureData.status === 'APPROVED') {
       const Payment = require('../models/payment.model');
       const Booking = require('../models/booking.model');
       const Property = require('../models/property.model');
+      const User = require('../models/user.model');
+      const Transaction = require('../models/transaction.model');
+      const mongoose = require('mongoose');
 
-      const payment = await Payment.findOne({
-        booking: bookingId,
-        user: req.user._id,
-        paymentMethod: 'paypal',
-      });
+      const useTransaction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test';
+      const session = useTransaction ? await mongoose.startSession() : null;
+      if (session) session.startTransaction();
 
-      if (!payment) {
-        return res.status(404).json({
-          status: 'fail',
-          message: 'Matching payment record not found in database',
-        });
-      }
+      try {
+        const payment = await Payment.findOne({
+          booking: bookingId,
+          user: req.user._id,
+          paymentMethod: 'paypal',
+        }).session(session);
 
-      // Update payment record
-      payment.isVerified = true;
-      payment.status = 'paid'; // matches Payment model schema validation
-      payment.transactionId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || token;
-      payment.verifiedAt = new Date();
-      payment.metadata = { ...payment.metadata, payerId, captureData };
-      await payment.save();
+        if (!payment) {
+          if (session) await session.abortTransaction();
+          return res.status(404).json({
+            status: 'fail',
+            message: 'Matching payment record not found in database',
+          });
+        }
 
-      // Update booking status (and advance status to completed)
-      const booking = await Booking.findByIdAndUpdate(bookingId, {
-        paymentStatus: 'paid', // matches Booking model schema validation
-        paidAmount: payment.totalAmount,
-        status: 'completed',
-      }, { new: true });
+        // Update payment record
+        payment.isVerified = true;
+        payment.status = 'paid'; // matches Payment model schema validation
+        payment.transactionId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || token;
+        payment.verifiedAt = new Date();
+        payment.metadata = { ...payment.metadata, payerId, captureData };
+        await payment.save({ session });
 
-      // Update property statistics
-      const propertyDoc = await Property.findByIdAndUpdate(payment.property, {
-        $inc: { successfulBookings: 1 },
-      }, { new: true });
-
-      // ── Automated Owner Payout Split Logic for PayPal Capture ──
-      if (propertyDoc) {
-        const User = require('../models/user.model');
-        const Transaction = require('../models/transaction.model');
-        const ownerId = propertyDoc.owner;
-        const netAmount = payment.netAmount;
-        const platformFee = payment.platformFee;
-
-        // 1. Update the owner's cumulative balance
-        await User.findByIdAndUpdate(
-          ownerId,
-          { $inc: { cumulativeBalance: netAmount } }
-        );
-
-        // 2. Create a new transaction record linked to the owner
-        await Transaction.create([{
-          owner: ownerId,
-          property: propertyDoc._id,
-          booking: payment.booking,
-          payment: payment._id,
-          amount: payment.totalAmount,
-          commission: platformFee,
-          netAmount: netAmount,
-          currency: payment.currency || 'EGP',
+        // Update booking status (and advance status to completed)
+        const booking = await Booking.findByIdAndUpdate(bookingId, {
+          paymentStatus: 'paid', // matches Booking model schema validation
+          paidAmount: payment.totalAmount,
           status: 'completed',
-          type: 'booking_income'
-        }]);
+        }, { session, new: true });
 
-        logger.info(`[Payout Split - PayPal Capture] Credited owner ${ownerId} balance with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
+        // ── Deduplicate Booking & Payments for same User/Property pair ──
+        if (booking) {
+          const duplicateBookings = await Booking.find({
+            user_id: booking.user_id,
+            property_id: booking.property_id,
+            _id: { $ne: booking._id },
+            status: { $in: ['pending', 'approved'] }
+          }).session(session);
+
+          if (duplicateBookings.length > 0) {
+            const duplicateBookingIds = duplicateBookings.map(b => b._id);
+            await Booking.deleteMany(
+              { _id: { $in: duplicateBookingIds } },
+              { session }
+            );
+            await Payment.deleteMany(
+              { booking: { $in: duplicateBookingIds }, status: 'pending' },
+              { session }
+            );
+            logger.info(`[Deduplication - PayPal Capture] Purged ${duplicateBookingIds.length} duplicate bookings and their pending payments.`);
+          }
+        }
+
+        // Update property statistics
+        const propertyDoc = await Property.findByIdAndUpdate(payment.property, {
+          $inc: { successfulBookings: 1 },
+        }, { session, new: true });
+
+        // ── Automated Owner Payout Split Logic for PayPal Capture ──
+        if (propertyDoc) {
+          const ownerId = propertyDoc.owner;
+          const netAmount = payment.netAmount;
+          const platformFee = payment.platformFee;
+
+          // 1. Update the owner's balance_USD
+          await User.updateOne({ _id: ownerId }, { $inc: { balance_USD: netAmount } }).session(session);
+          const updatedUser = await User.findById(ownerId).session(session);
+
+          // Emit real-time event hook
+          try {
+            const socketIO = require('../config/socket').getIO();
+            socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { balance_USD: updatedUser.balance_USD });
+          } catch (socketErr) {
+            logger.error('[PayPal Capture] Failed to emit socket balance update:', socketErr.message);
+          }
+
+          // 2. Create a new transaction record linked to the owner
+          await Transaction.create([{
+            owner: ownerId,
+            property: propertyDoc._id,
+            booking: payment.booking,
+            payment: payment._id,
+            amount: payment.totalAmount,
+            commission: platformFee,
+            netAmount: netAmount,
+            currency: 'USD',
+            status: 'completed',
+            type: 'booking_income'
+          }], { session });
+
+          logger.info(`[Payout Split - PayPal Capture] Credited owner ${ownerId} balance_USD with net revenue: ${netAmount}. Commission of ${platformFee} recorded.`);
+        }
+
+        if (session) await session.commitTransaction();
+
+        logger.info(`[PayPal Capture] Booking ${bookingId} successfully captured & marked completed.`);
+
+        return res.status(200).json({
+          status: 'success',
+          message: 'PayPal payment captured successfully',
+          data: {
+            paymentStatus: 'paid',
+            transactionId: payment.transactionId,
+          },
+        });
+      } catch (err) {
+        if (session) await session.abortTransaction();
+        throw err;
+      } finally {
+        if (session) session.endSession();
       }
-
-      logger.info(`[PayPal Capture] Booking ${bookingId} successfully captured & marked completed.`);
-
-      return res.status(200).json({
-        status: 'success',
-        message: 'PayPal payment captured successfully',
-        data: {
-          paymentStatus: 'paid',
-          transactionId: payment.transactionId,
-        },
-      });
     } else {
       return res.status(400).json({
         status: 'fail',
@@ -423,11 +467,24 @@ exports.capturePaypalOrder = async (req, res, next) => {
  * Request withdrawal of collected balance (owner/agent only)
  */
 exports.requestPayout = async (req, res, next) => {
+  const Payout = require('../models/payout.model');
+  const User = require('../models/user.model');
+  const mongoose = require('mongoose');
+
+  const useTransaction = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test';
+  const session = useTransaction ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
+
   try {
-    const Payout = require('../models/payout.model');
-    const { amount, method, accountDetails } = req.body;
+    let { amount, method, accountDetails } = req.body;
+
+    if (method === 'paymob') {
+      method = 'paymob_wallet';
+    }
 
     if (!amount || amount <= 0) {
+      if (session) await session.abortTransaction();
+      if (session) session.endSession();
       return res.status(400).json({
         status: 'fail',
         message: 'Invalid payout amount',
@@ -436,6 +493,8 @@ exports.requestPayout = async (req, res, next) => {
 
     const validMethods = ['paymob_wallet', 'paypal'];
     if (!validMethods.includes(method)) {
+      if (session) await session.abortTransaction();
+      if (session) session.endSession();
       return res.status(400).json({
         status: 'fail',
         message: 'Invalid payout method',
@@ -443,42 +502,223 @@ exports.requestPayout = async (req, res, next) => {
     }
 
     if (!accountDetails) {
+      if (session) await session.abortTransaction();
+      if (session) session.endSession();
       return res.status(400).json({
         status: 'fail',
         message: 'Account details are required',
       });
     }
 
-    // Calculate pending payouts to determine available balance
-    const activePendingPayouts = await Payout.aggregate([
-      { $match: { ownerId: req.user._id, status: 'pending' } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-    const pendingTotal = activePendingPayouts[0]?.total || 0;
-    const available = (req.user.cumulativeBalance || 0) - pendingTotal;
+    // 1. Atomic Deductions Lock: instantly validate and deduct balance_USD
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: req.user.id || req.user._id, balance_USD: { $gte: amount } },
+      { $inc: { balance_USD: -amount } },
+      { new: true, session }
+    );
 
-    if (available < amount) {
+    if (!updatedUser) {
+      if (session) await session.abortTransaction();
+      if (session) session.endSession();
       return res.status(400).json({
         status: 'fail',
-        message: `Insufficient available balance. Available: ${available} EGP. Pending: ${pendingTotal} EGP.`,
+        message: `Insufficient available balance. Required: ${amount} USD.`,
       });
     }
 
-    const payout = await Payout.create({
-      ownerId: req.user._id,
+    // 2. Create payout record inside transaction
+    const payoutArray = await Payout.create([{
+      ownerId: req.user.id || req.user._id,
       amount,
       method,
       accountDetails,
       status: 'pending',
-    });
+      currency: 'USD',
+    }], { session });
 
-    logger.info(`[Payout] User ${req.user._id} requested withdrawal of ${amount} EGP via ${method}`);
+    const payout = payoutArray[0];
 
-    res.status(201).json({
-      status: 'success',
-      data: { payout },
-    });
+    // Commit DB lock before performing slow upstream HTTP requests
+    if (session) await session.commitTransaction();
+    if (session) session.endSession();
+
+    // 2. Direct Gateway Dispatching: outside DB lock
+    let gatewaySuccess = false;
+    let transactionId = null;
+    let errorDetails = null;
+
+    try {
+      if (method === 'paypal') {
+        const mode = process.env.PAYPAL_MODE || 'sandbox';
+        const paypalBaseUrl = mode === 'live' || mode === 'production' ? 'https://api.paypal.com' : 'https://api-m.sandbox.paypal.com';
+        const clientId = process.env.PAYPAL_CLIENT_ID;
+        const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+
+        if (!clientId || !clientSecret) {
+          throw new Error('PayPal credentials are not configured in environment variables.');
+        }
+
+        // Get Access Token
+        const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+        const tokenRes = await fetch(`${paypalBaseUrl}/v1/oauth2/token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${auth}`,
+          },
+          body: 'grant_type=client_credentials',
+        });
+
+        if (!tokenRes.ok) {
+          throw new Error(`PayPal oauth token generation failed: HTTP ${tokenRes.status}`);
+        }
+
+        const tokenData = await tokenRes.json();
+        const accessToken = tokenData.access_token;
+
+        // Call PayPal Payouts
+        const payoutRes = await fetch(`${paypalBaseUrl}/v1/payouts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            sender_batch_header: {
+              sender_batch_id: `payout-${payout._id}-${Date.now()}`,
+              email_subject: "You have received a payout",
+              recipient_type: "EMAIL"
+            },
+            items: [
+              {
+                recipient_type: "EMAIL",
+                amount: {
+                  value: String(amount),
+                  currency: "USD"
+                },
+                note: "Instant autonomous withdrawal from Luxe Estates",
+                receiver: accountDetails
+              }
+            ]
+          })
+        });
+
+        const payoutData = await payoutRes.json();
+
+        if (payoutRes.ok) {
+          gatewaySuccess = true;
+          transactionId = payoutData.batch_header?.payout_batch_id || `pp-batch-${Date.now()}`;
+        } else {
+          throw new Error(payoutData.message || JSON.stringify(payoutData));
+        }
+      } else {
+        // Paymob Wallet Cashout
+        const paymobApiKey = process.env.PAYMOB_API_KEY;
+
+        if (!paymobApiKey) {
+          throw new Error('Paymob credentials are not configured.');
+        }
+
+        // Step 1: Get authentication token
+        const authRes = await fetch('https://accept.paymob.com/api/auth/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: paymobApiKey })
+        });
+
+        if (!authRes.ok) {
+          throw new Error(`Paymob authentication failed: HTTP ${authRes.status}`);
+        }
+
+        const authData = await authRes.json();
+        const paymobAuthToken = authData.token;
+
+        // Step 2: Determine issuer
+        let issuer = 'vodafone';
+        if (accountDetails.startsWith('011')) issuer = 'etisalat';
+        else if (accountDetails.startsWith('012')) issuer = 'orange';
+        else if (accountDetails.startsWith('015')) issuer = 'we';
+
+        // Step 3: Trigger disburse request
+        const paymobDisburseRes = await fetch('https://accept.paymob.com/api/secure/disburse/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${paymobAuthToken}`
+          },
+          body: JSON.stringify({
+            issuer,
+            amount: Number(amount),
+            msisdn: accountDetails,
+            national_id: updatedUser.kycNationality || '29001010101010',
+            client_reference_id: `payout-${payout._id}`,
+            customer_bears_fees: false
+          })
+        });
+
+        const disburseData = await paymobDisburseRes.json();
+
+        if (paymobDisburseRes.ok) {
+          gatewaySuccess = true;
+          transactionId = disburseData.transaction_id || `pm-disb-${Date.now()}`;
+        } else {
+          throw new Error(disburseData.message || JSON.stringify(disburseData));
+        }
+      }
+    } catch (apiErr) {
+      logger.error(`[Payout Gateway Error] ${method} payout failed:`, apiErr.message);
+      errorDetails = apiErr.message;
+    }
+
+    // 3. Transactional Safeguard: Rollback or Complete
+    if (gatewaySuccess) {
+      payout.status = 'completed';
+      payout.payoutTransactionId = transactionId;
+      await payout.save();
+
+      logger.info(`[Payout Success] Payout ${payout._id} of ${amount} USD completed successfully.`);
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Payout processed successfully',
+        data: { payout },
+      });
+    } else {
+      // Trigger rollback in a new transaction session block
+      const rollbackSession = useTransaction ? await mongoose.startSession() : null;
+      if (rollbackSession) rollbackSession.startTransaction();
+
+      try {
+        await User.updateOne(
+          { _id: req.user.id || req.user._id },
+          { $inc: { balance_USD: amount } },
+          { session: rollbackSession }
+        );
+
+        payout.status = 'failed';
+        payout.errorDetails = errorDetails || 'Unknown payout error';
+        await payout.save({ session: rollbackSession });
+
+        if (rollbackSession) await rollbackSession.commitTransaction();
+        logger.warn(`[Payout Failed - Rollback Success] Payout ${payout._id} failed. Balance refunded inside new session block. Error: ${errorDetails}`);
+      } catch (rollbackErr) {
+        if (rollbackSession) await rollbackSession.abortTransaction();
+        logger.error('[Payout Rollback Error] Failed to execute rollback transaction:', rollbackErr);
+      } finally {
+        if (rollbackSession) rollbackSession.endSession();
+      }
+
+      return res.status(400).json({
+        status: 'fail',
+        message: `Payout gateway disbursement failed. Refunding balance. Reason: ${errorDetails || 'Gateway error'}`,
+        data: { payout },
+      });
+    }
   } catch (err) {
+    if (session) {
+      if (session.inTransaction()) await session.abortTransaction();
+      session.endSession();
+    }
     next(err);
   }
 };
@@ -490,7 +730,21 @@ exports.requestPayout = async (req, res, next) => {
 exports.getPayouts = async (req, res, next) => {
   try {
     const Payout = require('../models/payout.model');
-    const payouts = await Payout.find({ ownerId: req.user._id }).sort({ created_at: -1 });
+    
+    let queryPage = req.query.page;
+    if (Array.isArray(queryPage)) queryPage = queryPage[0];
+    let queryLimit = req.query.limit;
+    if (Array.isArray(queryLimit)) queryLimit = queryLimit[0];
+
+    const page = Math.max(1, parseInt(queryPage, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(queryLimit, 10) || 10));
+    const skip = (page - 1) * limit;
+
+    const userId = req.user.id || req.user._id;
+    const payouts = await Payout.find({ ownerId: userId })
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       status: 'success',
@@ -557,14 +811,14 @@ exports.adminUpdatePayout = async (req, res, next) => {
     if (status === 'approved') {
       // Fetch owner balance inside the session
       const owner = await User.findById(payout.ownerId).session(session);
-      if (!owner || owner.cumulativeBalance < payout.amount) {
-        throw new Error('Owner has insufficient cumulative balance to complete this payout');
+      if (!owner || owner.balance_USD < payout.amount) {
+        throw new Error('Owner has insufficient balance to complete this payout');
       }
 
       // Decrement the balance
       await User.findByIdAndUpdate(
         payout.ownerId,
-        { $inc: { cumulativeBalance: -payout.amount } },
+        { $inc: { balance_USD: -payout.amount } },
         { session }
       );
     }

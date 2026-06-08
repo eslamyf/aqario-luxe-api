@@ -174,10 +174,10 @@ const userSchema = new mongoose.Schema(
         createdAt: { type: Date, default: Date.now },
       },
     ],
-    cumulativeBalance: {
+    balance_USD: {
       type: Number,
       default: 0,
-      min: 0,
+      min: [0, 'Balance cannot be negative'],
     },
   },
   { timestamps: true }
