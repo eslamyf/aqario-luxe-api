@@ -79,8 +79,13 @@ exports.getPaymentStatus = async (req, res, next) => {
  */
 exports.listPayments = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    let queryPage = req.query.page;
+    if (Array.isArray(queryPage)) queryPage = queryPage[0];
+    let queryLimit = req.query.limit;
+    if (Array.isArray(queryLimit)) queryLimit = queryLimit[0];
+
+    const page = Math.max(1, parseInt(queryPage, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(queryLimit, 10) || 10));
 
     const result = await paymentService.listPayments(req.user._id, page, limit);
 

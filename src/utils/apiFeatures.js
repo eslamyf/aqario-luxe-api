@@ -91,8 +91,13 @@ class APIFeatures {
       }
     }
 
-    const page  = this.queryString.page  * 1 || 1;
-    const limit = this.queryString.limit * 1 || 10;
+    let queryPage = this.queryString.page;
+    if (Array.isArray(queryPage)) queryPage = queryPage[0];
+    let queryLimit = this.queryString.limit;
+    if (Array.isArray(queryLimit)) queryLimit = queryLimit[0];
+
+    const page  = Math.max(1, parseInt(queryPage, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(queryLimit, 10) || 10));
     const skip  = (page - 1) * limit;
     
     // We still apply limit. We can skip if cursor is not provided.

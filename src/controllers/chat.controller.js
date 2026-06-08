@@ -145,8 +145,13 @@ exports.getUserChats = async (req, res, next) => {
 exports.getChatMessages = async (req, res, next) => {
   try {
     const { chatId } = req.params;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 50;
+    let queryPage = req.query.page;
+    if (Array.isArray(queryPage)) queryPage = queryPage[0];
+    let queryLimit = req.query.limit;
+    if (Array.isArray(queryLimit)) queryLimit = queryLimit[0];
+
+    const page = Math.max(1, parseInt(queryPage, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(queryLimit, 10) || 50));
     const skip = (page - 1) * limit;
 
     // Check if chat exists and user is a participant

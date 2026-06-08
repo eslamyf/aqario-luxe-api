@@ -70,7 +70,9 @@ exports.adminStats = asyncHandler(async (req, res) => {
 
 // @route GET /api/v1/dashboard/admin/activity
 exports.adminActivity = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit, 10) || 10;
+  let queryLimit = req.query.limit;
+  if (Array.isArray(queryLimit)) queryLimit = queryLimit[0];
+  const limit = Math.max(1, Math.min(100, parseInt(queryLimit, 10) || 10));
   
   // Optimized Aggregation Pipeline using $unionWith to fetch and normalize global events
   const activities = await User.aggregate([
