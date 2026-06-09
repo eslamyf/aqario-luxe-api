@@ -294,5 +294,12 @@
     "MINIMUM_BID": "Bid must be at least {{minBid}}",
     "OWN_AUCTION": "You cannot bid on your own auction",
     "PLACED": "Bid placed successfully"
+  },
+
+  "SUBSCRIPTION": {
+    "REQUIRED": "An active subscription is required to create property listings. Please upgrade your plan to continue.",
+    "FREE_LIMIT_REACHED": "You have used all {{limit}} free listings. Upgrade to a subscription plan to keep publishing properties.",
+    "UPGRADE_HINT": "Visit the Subscriptions page to choose a plan that fits your needs and start listing immediately.",
+    "LIMIT_REACHED": "You have reached your monthly listing limit ({{used}}/{{limit}}). Upgrade your plan to publish more properties."
   }
 }
