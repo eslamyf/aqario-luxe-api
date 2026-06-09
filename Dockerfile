@@ -17,12 +17,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Copy source code
 COPY --from=builder /app/src ./src
 
-# 💡 حل السحر: إنشاء ملف .env.production فاضي عشان نوقف حلقة dotenvx المفرغة
-RUN touch .env.production
+# 💡 حل الأزمة: إنشاء ملفين وهميين وفاضيين عشان dotenvx تبطل تلف في حلقة مفرغة وتشتغل علطول
+RUN touch .env.production .env
 
 # Ensure non-root user owns the app directory
 RUN chown -R node:node /app
 USER node
 
-# Start the application
-CMD ["npm", "start"]
+# Start the application directly using node
+CMD ["node", "src/server.js"]
