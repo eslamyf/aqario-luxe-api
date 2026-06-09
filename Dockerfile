@@ -21,10 +21,5 @@ COPY --from=builder /app/src ./src
 RUN chown -R node:node /app
 USER node
 
-EXPOSE 3000
-
-# Healthcheck to integrate with Docker / k8s orchestrators
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1
-
+# Start the application using dynamic port
 CMD ["npm", "start"]
