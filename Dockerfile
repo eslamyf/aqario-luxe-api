@@ -17,9 +17,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Copy source code
 COPY --from=builder /app/src ./src
 
+# 💡 حل السحر: إنشاء ملف .env.production فاضي عشان نوقف حلقة dotenvx المفرغة
+RUN touch .env.production
+
 # Ensure non-root user owns the app directory
 RUN chown -R node:node /app
 USER node
 
-# Start the application using dynamic port
+# Start the application
 CMD ["npm", "start"]
