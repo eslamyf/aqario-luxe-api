@@ -122,16 +122,20 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'https://res.cloudinary.com', 'blob:'],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: ["'self'", CLIENT_URL],
-      frameSrc: ["'none'"],
-      objectSrc: ["'none'"],
+      imgSrc:     ["'self'", 'data:', 'https://res.cloudinary.com', 'https://lh3.googleusercontent.com', 'blob:'],
+      scriptSrc:  ["'self'", 'https://accounts.google.com'],
+      styleSrc:   ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
+      connectSrc: ["'self'", CLIENT_URL, ...allowedOrigins, 'https://accounts.google.com'],
+      frameSrc:   ["'self'", 'https://accounts.google.com'],
+      objectSrc:  ["'none'"],
     },
   },
+  // Required for Google Sign-In popup flow:
+  // 'same-origin-allow-popups' lets the OAuth popup call window.postMessage
+  // back to the opener. Setting this to false entirely silences the COOP
+  // header but leaves the app unprotected; the correct value is below.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   crossOriginEmbedderPolicy: false,
-  crossOriginOpenerPolicy: false,
 }));
 
 // Body parsing
