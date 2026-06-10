@@ -13,9 +13,9 @@ const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 const setRefreshCookie = (res, token) =>
   res.cookie('refreshToken', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    secure: true, // MUST be true on HTTPS production
+    sameSite: 'none', // MUST be 'none' for cross-domain Vercel to Render/Railway routing
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/',
   });
 
@@ -249,14 +249,14 @@ exports.logout = asyncHandler(async (req, res) => {
     );
   }
 
-  res.clearCookie('refreshToken', { path: '/' });
+  res.clearCookie('refreshToken', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
   res.status(200).json({ status: 'success', message: req.t('AUTH.LOGOUT_SUCCESS') });
 });
 
 // ─── Logout All Devices ──────────────────────────────────────
 exports.logoutAll = asyncHandler(async (req, res) => {
   await RefreshToken.updateMany({ userId: req.user._id }, { isRevoked: true });
-  res.clearCookie('refreshToken', { path: '/' });
+  res.clearCookie('refreshToken', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
   res.status(200).json({ status: 'success', message: req.t('AUTH.LOGOUT_ALL_SUCCESS') });
 });
 

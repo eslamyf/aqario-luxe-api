@@ -96,6 +96,18 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : [CLIENT_URL];
 
+// Force inclusion of Vercel production frontend domains
+const defaultProdOrigins = [
+  'https://luxe-estates.vercel.app',
+  'https://www.aqarioluxe.com',
+  'https://aqarioluxe.com'
+];
+defaultProdOrigins.forEach(origin => {
+  if (!allowedOrigins.includes(origin)) {
+    allowedOrigins.push(origin);
+  }
+});
+
 // ── App Setup ──────────────────────────────────────────────
 const app = express();
 const server = http.createServer(app);
