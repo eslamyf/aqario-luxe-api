@@ -174,6 +174,9 @@ exports.login = asyncHandler(async (req, res) => {
   user.lockUntil = undefined;
   await user.save({ validateBeforeSave: false });
 
+  // Flush/overwrite any dead/existing token records for this user ID
+  await RefreshToken.deleteMany({ userId: user._id });
+
   const accessToken = signToken(user._id, user.tokenVersion);
   const refreshToken = signRefreshToken(user._id, user.tokenVersion);
 
