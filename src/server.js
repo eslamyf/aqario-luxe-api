@@ -92,21 +92,24 @@ if (!CLIENT_URL) {
 // ALLOWED_ORIGINS is a comma-separated list in .env.
 // Falls back to CLIENT_URL for single-origin setups.
 // Example: ALLOWED_ORIGINS=http://localhost:4200,https://luxe-estates.vercel.app
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
-  : [CLIENT_URL];
-
-// Force inclusion of Vercel production frontend domains
-const defaultProdOrigins = [
+const allowedOrigins = [
+  'http://localhost:4200',
+  'https://aqario-luxe.vercel.app', // Core production domain
   'https://luxe-estates.vercel.app',
   'https://www.aqarioluxe.com',
   'https://aqarioluxe.com'
 ];
-defaultProdOrigins.forEach(origin => {
-  if (!allowedOrigins.includes(origin)) {
-    allowedOrigins.push(origin);
-  }
-});
+
+if (process.env.ALLOWED_ORIGINS) {
+  process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean).forEach(origin => {
+    if (!allowedOrigins.includes(origin)) {
+      allowedOrigins.push(origin);
+    }
+  });
+}
+if (CLIENT_URL && !allowedOrigins.includes(CLIENT_URL)) {
+  allowedOrigins.push(CLIENT_URL);
+}
 
 // ── App Setup ──────────────────────────────────────────────
 const app = express();

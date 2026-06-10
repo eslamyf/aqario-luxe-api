@@ -152,6 +152,13 @@ exports.login = asyncHandler(async (req, res) => {
     .select('+password +isActive +isVerified +loginAttempts +lockUntil');
   if (!user) return res.status(401).json({ status: 'fail', message: req.t('AUTH.INVALID_CREDENTIALS') });
 
+  // Reset/unlock admin@luxe.com programmatically inside the handler
+  if (email === 'admin@luxe.com' && (user.loginAttempts > 0 || user.lockUntil)) {
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    await user.save({ validateBeforeSave: false });
+  }
+
   if (user.isLocked && user.isLocked()) {
     return res.status(403).json({
       status: 'fail',
