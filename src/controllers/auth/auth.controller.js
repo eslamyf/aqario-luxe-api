@@ -33,26 +33,38 @@ const persistRefreshToken = (userId, token, req) =>
 exports.register = asyncHandler(async (req, res) => {
   const { name, email, password, phone } = req.body;
 
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    return res.status(400).json({ status: 'fail', message: req.t('AUTH.EMAIL_IN_USE') });
+  let user = await User.findOne({ email });
+  
+  if (user) {
+    if (user.isVerified) {
+      return res.status(400).json({ status: 'fail', message: req.t('AUTH.EMAIL_IN_USE') });
+    }
+    // Unverified stale account: overwrite with new data
+    user.name = name;
+    user.password = password;
+    if (phone !== undefined) user.phone = phone;
+    user.role = 'buyer'; // force role
+  } else {
+    // role is always forced to 'buyer' — never trust client-supplied role
+    user = new User({ name, email, password, phone, role: 'buyer' });
   }
-
-  // role is always forced to 'buyer' — never trust client-supplied role
-  const user = await User.create({ name, email, password, phone, role: 'buyer' });
 
   // Hash and store OTP
   const otp = generateOTP();
   user.otpHash = crypto.createHash('sha256').update(otp).digest('hex');
   user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-  await user.save({ validateBeforeSave: false });
+  
+  // Save the user (creates or updates)
+  await user.save();
 
   try {
     await sendVerificationEmail(user.email, otp);
     logger.info(`[Email] OTP sent to ${user.email}`);
   } catch (emailError) {
     logger.error(`[Email] Failed to send OTP to ${user.email}: ${emailError.message}`);
-    // Non-blocking — user still created; they can resend OTP
+    // CRUCIAL ROLLBACK: Delete the dangling unverified record immediately
+    await User.findByIdAndDelete(user._id);
+    return res.status(500).json({ status: 'error', message: 'Email service failure. Registration rolled back. Please try again.' });
   }
 
   user.password = undefined;
@@ -105,8 +117,14 @@ exports.updateUserRole = asyncHandler(async (req, res) => {
 
 // ─── Verify OTP ─────────────────────────────────────────────
 exports.verifyOTP = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body;
-  const user = await User.findOne({ email }).select('+otpHash +otpExpires +otpAttempts');
+  const email = req.body.email || req.query.email;
+  const { otp } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ status: 'fail', message: 'Email identifier is required for OTP verification.' });
+  }
+
+  const user = await User.findOne({ email: email.trim().toLowerCase() }).select('+otpHash +otpExpires +otpAttempts');
 
   if (!user) return res.status(400).json({ status: 'fail', message: req.t('AUTH.USER_NOT_FOUND') });
   if (user.isVerified) return res.status(400).json({ status: 'fail', message: req.t('AUTH.ACCOUNT_ALREADY_VERIFIED') });
