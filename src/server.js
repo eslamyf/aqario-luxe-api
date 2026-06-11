@@ -113,6 +113,10 @@ if (CLIENT_URL && !allowedOrigins.includes(CLIENT_URL)) {
 
 // ── App Setup ──────────────────────────────────────────────
 const app = express();
+
+// CRUCIAL: Enable trust proxy for live cloud deployments (Railway/Render/AWS)
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 const io = initSocket(server);
 
