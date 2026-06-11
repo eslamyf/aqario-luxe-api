@@ -147,6 +147,87 @@ exports.handlePaymobWebhook = asyncHandler(async (req, res, next) => {
     return res.status(200).json({ status: 'success', message: 'Payment already verified', duplicate: true });
   }
 
+  // Intercept TRANSACTION_SUCCESS or success callback events to credit Owner Wallet
+  const isTransactionSuccess = payload.type === 'TRANSACTION_SUCCESS' || 
+    (payload.type === 'TRANSACTION' && (transaction.success === true || payload.success === true));
+
+  if (isTransactionSuccess && !isPromotion && payment) {
+    const Booking = require('../models/booking.model');
+    const Property = require('../models/property.model');
+    const User = require('../models/user.model');
+    const Transaction = require('../models/transaction.model');
+
+    // Only split if payment is not yet verified to prevent double credit
+    if (!payment.isVerified && payment.status !== 'paid') {
+      const bookingDoc = await Booking.findById(payment.booking);
+      if (bookingDoc) {
+        const propertyDoc = await Property.findById(bookingDoc.property_id);
+        if (propertyDoc) {
+          const ownerId = propertyDoc.owner;
+          const calculatedOwnerShare = payment.netAmount;
+
+          // 1. Programmatically update the Owner's database record (both wallet and balance_USD)
+          await User.findByIdAndUpdate(ownerId, { 
+            $inc: { 
+              wallet: calculatedOwnerShare,
+              balance_USD: calculatedOwnerShare
+            } 
+          });
+          logger.info(`[Webhook/Paymob] TRANSACTION_SUCCESS automated split: credited owner ${ownerId} with ${calculatedOwnerShare}`);
+
+          // Emit real-time event hook
+          try {
+            const updatedUser = await User.findById(ownerId);
+            const socketIO = require('../config/socket').getIO();
+            socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { 
+              balance_USD: updatedUser.balance_USD,
+              wallet: updatedUser.wallet || 0
+            });
+          } catch (socketErr) {
+            logger.error('[Webhook/Paymob] Failed to emit socket balance update:', socketErr.message);
+          }
+
+          // 2. Ensure proper system ledger logs are kept for this transactional split
+          const existingTx = await Transaction.findOne({ payment: payment._id });
+          if (!existingTx) {
+            await Transaction.create({
+              owner: ownerId,
+              property: propertyDoc._id,
+              booking: bookingDoc._id,
+              payment: payment._id,
+              amount: payment.totalAmount,
+              commission: payment.platformFee,
+              netAmount: calculatedOwnerShare,
+              currency: payment.currency || 'EGP',
+              status: 'completed',
+              type: 'booking_income'
+            });
+            logger.info(`[Webhook/Paymob] TRANSACTION_SUCCESS ledger entry logged for owner ${ownerId}`);
+          }
+
+          // Update the payment document status in memory so verifyPayment does not duplicate the balance/ledger update
+          payment.isVerified = true;
+          payment.status = 'paid';
+          payment.transactionId = transaction.id || transaction.transaction_id || 'pm_tx_' + Date.now();
+          payment.verifiedAt = new Date();
+          await payment.save();
+
+          // Update booking status
+          await Booking.findByIdAndUpdate(payment.booking, {
+            paymentStatus: 'paid',
+            paidAmount: payment.totalAmount,
+            status: 'completed',
+          });
+
+          // Update property statistics
+          await Property.findByIdAndUpdate(payment.property, {
+            $inc: { successfulBookings: 1 }
+          });
+        }
+      }
+    }
+  }
+
   let result;
   if (isPromotion) {
     result = await promotionService.activatePromotion(paymentId);

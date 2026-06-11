@@ -37,13 +37,18 @@ exports.initiatePayment = async (req, res, next) => {
       });
     }
 
+    const backendUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+      : `${req.protocol}://${req.get('host')}`;
+
     // Call service
     const result = await paymentService.initiatePayment(
       bookingId,
       paymentMethod,
       req.user._id,
       req.ip,
-      req.headers['user-agent']
+      req.headers['user-agent'],
+      backendUrl
     );
 
     res.status(200).json({
@@ -198,11 +203,16 @@ exports.initiatePromotion = async (req, res, next) => {
       });
     }
 
+    const backendUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+      : `${req.protocol}://${req.get('host')}`;
+
     const result = await paymentService.initiatePromotion(
       propertyId,
       type,
       paymentMethod,
-      req.user._id
+      req.user._id,
+      backendUrl
     );
 
     res.status(200).json({
@@ -407,14 +417,17 @@ exports.capturePaypalOrder = async (req, res, next) => {
           const netAmount = payment.netAmount;
           const platformFee = payment.platformFee;
 
-          // 1. Update the owner's balance_USD
-          await User.updateOne({ _id: ownerId }, { $inc: { balance_USD: netAmount } }).session(session);
+          // 1. Update the owner's balance_USD and wallet
+          await User.updateOne({ _id: ownerId }, { $inc: { balance_USD: netAmount, wallet: netAmount } }).session(session);
           const updatedUser = await User.findById(ownerId).session(session);
 
           // Emit real-time event hook
           try {
             const socketIO = require('../config/socket').getIO();
-            socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { balance_USD: updatedUser.balance_USD });
+            socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { 
+              balance_USD: updatedUser.balance_USD,
+              wallet: updatedUser.wallet || 0
+            });
           } catch (socketErr) {
             logger.error('[PayPal Capture] Failed to emit socket balance update:', socketErr.message);
           }
@@ -515,10 +528,10 @@ exports.requestPayout = async (req, res, next) => {
       });
     }
 
-    // 1. Atomic Deductions Lock: instantly validate and deduct balance_USD
+    // 1. Atomic Deductions Lock: instantly validate and deduct balance_USD and wallet
     const updatedUser = await User.findOneAndUpdate(
       { _id: req.user.id || req.user._id, balance_USD: { $gte: amount } },
-      { $inc: { balance_USD: -amount } },
+      { $inc: { balance_USD: -amount, wallet: -amount } },
       { new: true, session }
     );
 
@@ -696,7 +709,7 @@ exports.requestPayout = async (req, res, next) => {
       try {
         await User.updateOne(
           { _id: req.user.id || req.user._id },
-          { $inc: { balance_USD: amount } },
+          { $inc: { balance_USD: amount, wallet: amount } },
           { session: rollbackSession }
         );
 
@@ -820,10 +833,10 @@ exports.adminUpdatePayout = async (req, res, next) => {
         throw new Error('Owner has insufficient balance to complete this payout');
       }
 
-      // Decrement the balance
+      // Decrement the balance and wallet
       await User.findByIdAndUpdate(
         payout.ownerId,
-        { $inc: { balance_USD: -payout.amount } },
+        { $inc: { balance_USD: -payout.amount, wallet: -payout.amount } },
         { session }
       );
     }

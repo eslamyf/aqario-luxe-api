@@ -442,13 +442,18 @@ exports.recentProperties = asyncHandler(async (req, res) => {
     Property.countDocuments(filter),
   ]);
 
+  const mappedProperties = properties.map(p => ({
+    ...p,
+    approvalStatus: p.isApproved ? 'approved' : 'pending'
+  }));
+
   res.status(200).json({
     status: 'success',
     page,
     total,
     pages: Math.ceil(total / limit),
-    results: properties.length,
-    data: { properties },
+    results: mappedProperties.length,
+    data: { properties: mappedProperties },
   });
 });
 
@@ -562,19 +567,29 @@ exports.approveProperty = asyncHandler(async (req, res) => {
       return res.status(400).json({ status: 'fail', message: 'Property is already approved.' });
     }
 
-    existing.isApproved = true;
-    existing.status = 'available';
-    await existing.save({ session });
+    const updated = await Property.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: true, status: 'available' },
+      { new: true, session }
+    ).populate('owner', 'name email').lean();
+
+    if (!updated) {
+      if (session) await session.abortTransaction();
+      return res.status(404).json({ status: 'fail', message: 'Property not found' });
+    }
+
+    // Explicitly add approvalStatus for frontend mapping
+    updated.approvalStatus = 'approved';
 
     // ── Audit Trail ──────────────────────────────────────────────
     await logAction(
-      req.user._id, 'APPROVE_PROPERTY', 'Property', existing._id,
+      req.user._id, 'APPROVE_PROPERTY', 'Property', updated._id,
       { before: { isApproved: false, status: existing.status }, after: { isApproved: true, status: 'available' } },
       { ip: req.ip, userAgent: req.headers['user-agent'], session }
     );
 
     if (session) await session.commitTransaction();
-    res.status(200).json({ status: 'success', data: { property: existing } });
+    res.status(200).json({ status: 'success', data: { property: updated } });
   } catch (err) {
     if (session) await session.abortTransaction();
     throw err;
@@ -604,19 +619,30 @@ exports.rejectProperty = asyncHandler(async (req, res) => {
 
     const prevStatus = existing.status;
     const prevApproved = existing.isApproved;
-    existing.isApproved = false;
-    existing.status = 'unavailable';
-    await existing.save({ session });
+
+    const updated = await Property.findByIdAndUpdate(
+      req.params.id,
+      { isApproved: false, status: 'unavailable' },
+      { new: true, session }
+    ).populate('owner', 'name email').lean();
+
+    if (!updated) {
+      if (session) await session.abortTransaction();
+      return res.status(404).json({ status: 'fail', message: 'Property not found' });
+    }
+
+    // Explicitly add approvalStatus for frontend mapping
+    updated.approvalStatus = 'rejected';
 
     // ── Audit Trail ──────────────────────────────────────────────
     await logAction(
-      req.user._id, 'REJECT_PROPERTY', 'Property', existing._id,
+      req.user._id, 'REJECT_PROPERTY', 'Property', updated._id,
       { before: { isApproved: prevApproved, status: prevStatus }, after: { isApproved: false, status: 'unavailable' } },
       { ip: req.ip, userAgent: req.headers['user-agent'], reason: req.body.reason || null, session }
     );
 
     if (session) await session.commitTransaction();
-    res.status(200).json({ status: 'success', data: { property: existing } });
+    res.status(200).json({ status: 'success', data: { property: updated } });
   } catch (err) {
     if (session) await session.abortTransaction();
     throw err;
@@ -816,7 +842,11 @@ exports.ownerProperties = asyncHandler(async (req, res) => {
     Property.find({ owner: req.user._id }).sort('-createdAt').skip(skip).limit(limit).lean(),
     Property.countDocuments({ owner: req.user._id })
   ]);
-  res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: properties.length, data: { properties } });
+  const mappedProperties = properties.map(p => ({
+    ...p,
+    approvalStatus: p.isApproved ? 'approved' : 'pending'
+  }));
+  res.status(200).json({ status: 'success', page, total, pages: Math.ceil(total / limit), results: mappedProperties.length, data: { properties: mappedProperties } });
 });
 
 exports.ownerBookings = asyncHandler(async (req, res) => {

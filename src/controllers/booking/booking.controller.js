@@ -71,10 +71,18 @@ exports.createBooking = async (req, res, next) => {
       });
     }
 
+    // Calculate total amount based on duration for rental properties
+    let totalNights = 1;
+    if (property.listingType === 'rent') {
+      const timeDiff = parsedEnd.getTime() - parsedStart.getTime();
+      totalNights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    }
+    const bookingAmount = property.price * totalNights;
+
     const booking = await Booking.create({
       user_id:     req.user._id,
       property_id: propertyId,
-      amount:      property.price, // BUG-12 FIX: Always use server-side price, never req.body.amount
+      amount:      bookingAmount, // Server-side price based on nights
       start_date:  parsedStart,
       end_date:    parsedEnd,
       status:      'pending' // BUG-04 FIX: Owner must approve before payment can proceed

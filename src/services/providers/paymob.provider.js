@@ -53,7 +53,7 @@ class PaymobProvider extends BaseProvider {
    */
   async createPayment(data) {
     try {
-      const { amount, paymentId, userId, propertyName, currency } = data;
+      const { amount, paymentId, userId, propertyName, currency, backendUrl } = data;
 
       logger.info(`[Paymob] Creating payment: ${paymentId}, amount: ${amount}`);
 
@@ -114,21 +114,24 @@ class PaymobProvider extends BaseProvider {
           );
 
           if (propertyDoc) {
-            // 4. Update the owner's USD balance (95% net revenue split)
+            // 4. Update the owner's USD balance and wallet (95% net revenue split)
             const ownerId = propertyDoc.owner;
             const netAmount = payment.netAmount;
             const platformFee = payment.platformFee;
 
             await User.updateOne(
               { _id: ownerId },
-              { $inc: { balance_USD: netAmount } }
+              { $inc: { balance_USD: netAmount, wallet: netAmount } }
             );
 
             // Fetch the updated user for the socket notification
             const updatedUser = await User.findById(ownerId);
             try {
               const socketIO = require('../../config/socket').getIO();
-              socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { balance_USD: updatedUser.balance_USD });
+              socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { 
+                balance_USD: updatedUser.balance_USD,
+                wallet: updatedUser.wallet || 0
+              });
             } catch (socketErr) {
               logger.error('[Mock Paymob] Failed to emit socket balance update:', socketErr.message);
             }
@@ -151,6 +154,9 @@ class PaymobProvider extends BaseProvider {
           }
         }
 
+        const successUrl = `${backendUrl || 'http://localhost:5002'}/api/v1/payments/success`;
+        const callbackUrl = `${backendUrl || 'http://localhost:5002'}/api/v1/payments/webhook/paymob`;
+
         return {
           paymentKey: 'mock_payment_key_123',
           iframeKey: 'mock_payment_key_123',
@@ -158,6 +164,8 @@ class PaymobProvider extends BaseProvider {
           metadata: {
             orderId: 'mock_order_123',
             integrationId: this.integrationId,
+            redirectionUrl: successUrl,
+            callbackUrl: callbackUrl,
           },
         };
       }
@@ -188,14 +196,38 @@ class PaymobProvider extends BaseProvider {
         return cleaned.length > 0 ? cleaned : 'NA';
       };
 
+      let totalAmount = amount;
+      if (data.bookingId) {
+        const Booking = require('../../models/booking.model');
+        const Property = require('../../models/property.model');
+        
+        const bookingDoc = await Booking.findById(data.bookingId);
+        if (!bookingDoc) {
+          throw new Error('Booking not found during Paymob amount validation');
+        }
+        const propertyDoc = await Property.findById(data.propertyId);
+        if (!propertyDoc) {
+          throw new Error('Property not found during Paymob amount validation');
+        }
+
+        let totalNights = 1;
+        if (propertyDoc.listingType === 'rent') {
+          const timeDiff = bookingDoc.end_date.getTime() - bookingDoc.start_date.getTime();
+          totalNights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+        }
+        totalAmount = propertyDoc.price * totalNights;
+      }
+
       // Convert currency to EGP if not already EGP
-      let finalAmount = amount;
+      let finalAmount = totalAmount;
       let finalCurrency = 'EGP'; // Force explicit currency validation mapping to EGP
 
       if (currency && currency.toUpperCase() !== 'EGP') {
         const exchangeRate = 50.0;
-        finalAmount = amount * exchangeRate;
-        logger.info(`[Paymob] Converted ${amount} ${currency} to ${finalAmount} EGP (rate: ${exchangeRate})`);
+        finalAmount = totalAmount * exchangeRate;
+        logger.info(`[Paymob] Recalculated total amount: ${totalAmount}. Converted ${totalAmount} ${currency} to ${finalAmount} EGP (rate: ${exchangeRate})`);
+      } else {
+        logger.info(`[Paymob] Recalculated total amount: ${totalAmount} EGP`);
       }
 
       // Safe-capping mechanism for non-production environments
@@ -203,6 +235,9 @@ class PaymobProvider extends BaseProvider {
         logger.info(`[Paymob] [SANDBOX] Testing amount ${finalAmount} EGP exceeds threshold. Intercepted and capped to 100 EGP for upstream aggregator call.`);
         finalAmount = 100;
       }
+
+      const successUrl = `${backendUrl || 'http://localhost:5002'}/api/v1/payments/success`;
+      const callbackUrl = `${backendUrl || 'http://localhost:5002'}/api/v1/payments/webhook/paymob`;
 
       // Step 1: Get authentication token
       const authToken = await this.getAuthToken();
@@ -228,6 +263,11 @@ class PaymobProvider extends BaseProvider {
           email: getFallbackString(userEmail),
           phone_number: getFallbackString(userPhone),
         },
+        extra_fields: {
+          callback_url: callbackUrl,
+          success_url: successUrl,
+          redirection_url: successUrl,
+        }
       };
 
       const orderResponse = await postJson(`${this.apiUrl}/ecommerce/orders`, orderData);
@@ -257,6 +297,12 @@ class PaymobProvider extends BaseProvider {
         },
         currency: finalCurrency,
         integration_id: this.integrationId,
+        redirection_url: successUrl,
+        callback_url: callbackUrl,
+        extra_fields: {
+          success_url: successUrl,
+          failure_url: `${backendUrl || 'http://localhost:5002'}/api/v1/payments/failed`,
+        }
       };
 
       const paymentKeyResponse = await postJson(`${this.apiUrl}/acceptance/payment_keys`, paymentKeyData);
@@ -275,6 +321,8 @@ class PaymobProvider extends BaseProvider {
         metadata: {
           orderId,
           integrationId: this.integrationId,
+          redirectionUrl: successUrl,
+          callbackUrl: callbackUrl,
         },
       };
     } catch (err) {

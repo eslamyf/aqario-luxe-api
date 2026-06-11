@@ -197,6 +197,11 @@ propertySchema.virtual('badge').get(function () {
   return this.listingType === 'rent' ? 'For Rent' : 'For Sale';
 });
 
+// approvalStatus virtual: derived from isApproved
+propertySchema.virtual('approvalStatus').get(function () {
+  return this.isApproved ? 'approved' : 'pending';
+});
+
 // Helper: dynamic slugification for both LTR and RTL strings
 function slugify(text) {
   if (!text) return '';

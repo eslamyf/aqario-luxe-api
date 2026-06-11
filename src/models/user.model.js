@@ -179,6 +179,11 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Balance cannot be negative'],
     },
+    wallet: {
+      type: Number,
+      default: 0,
+      min: [0, 'Wallet balance cannot be negative'],
+    },
   },
   { timestamps: true }
 );

@@ -51,7 +51,7 @@ class PaymentService {
    * 3. Double-payment check (booking can't have 2 payments)
    * 4. KYC verified (already protected by middleware)
    */
-  async initiatePayment(bookingId, paymentMethod, userId, ipAddress, userAgent) {
+  async initiatePayment(bookingId, paymentMethod, userId, ipAddress, userAgent, backendUrl) {
     try {
       logger.info(`[Payment] Initiating payment for booking ${bookingId}, method: ${paymentMethod}`);
 
@@ -72,12 +72,18 @@ class PaymentService {
         throw new Error('Invalid property price');
       }
 
+      let totalNights = 1;
+      if (property.listingType === 'rent') {
+        const timeDiff = booking.end_date.getTime() - booking.start_date.getTime();
+        totalNights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      }
+      const totalAmount = propertyPrice * totalNights;
+
       // Platform service fee calculation (centralized helper)
-      const totalAmount = propertyPrice;
       const platformFee = this.calculatePlatformFee(totalAmount);
       const netAmount = totalAmount - platformFee;
 
-      logger.info(`[Payment] Amount breakdown - Price: ${propertyPrice}, Fee: ${platformFee}, Total: ${totalAmount}`);
+      logger.info(`[Payment] Amount breakdown - Price: ${propertyPrice}, Nights: ${totalNights}, Fee: ${platformFee}, Total: ${totalAmount}`);
 
       // 3. CRITICAL: Double-payment prevention
       // Check if booking already has a non-failed payment
@@ -113,7 +119,7 @@ class PaymentService {
       }
 
       let finalCurrency = 'USD';
-      let finalPropertyPrice = propertyPrice;
+      let finalPropertyPrice = totalAmount;
       let finalPlatformFee = platformFee;
       let finalTotalAmount = totalAmount;
       let finalNetAmount = netAmount;
@@ -150,6 +156,7 @@ class PaymentService {
           bookingId: bookingId,
           propertyName: getPropertyTitleString(property.title),
           currency: payment.currency,
+          backendUrl,
         });
       } catch (providerErr) {
         // Provider creation failed, mark payment as failed
@@ -301,14 +308,17 @@ class PaymentService {
         const netAmount = payment.netAmount;
         const platformFee = payment.platformFee;
 
-        // 1. Update the owner's USD balance
-        await User.updateOne({ _id: ownerId }, { $inc: { balance_USD: netAmount } }).session(session);
+        // 1. Update the owner's USD balance and wallet
+        await User.updateOne({ _id: ownerId }, { $inc: { balance_USD: netAmount, wallet: netAmount } }).session(session);
         const updatedUser = await User.findById(ownerId).session(session);
 
         // Emit real-time event hook
         try {
           const socketIO = require('../config/socket').getIO();
-          socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { balance_USD: updatedUser.balance_USD });
+          socketIO.to(`user_${ownerId}`).emit('balanceUpdate', { 
+            balance_USD: updatedUser.balance_USD,
+            wallet: updatedUser.wallet || 0
+          });
         } catch (socketErr) {
           logger.error('[PaymentService] Failed to emit socket balance update:', socketErr.message);
         }
@@ -472,7 +482,7 @@ class PaymentService {
    * - Boost Listing ($24.99 / EGP 750)
    * - Premium Badge ($14.99 / EGP 400)
    */
-  async initiatePromotion(propertyId, type, paymentMethod, userId) {
+  async initiatePromotion(propertyId, type, paymentMethod, userId, backendUrl) {
     try {
       logger.info(`[Payment] Initiating promotion ${type} for property ${propertyId}`);
 
@@ -522,6 +532,7 @@ class PaymentService {
           propertyId,
           propertyName: `Promotion: ${type} - ${getPropertyTitleString(property.title)}`,
           currency,
+          backendUrl,
         });
       } catch (providerErr) {
         transaction.status = 'failed';
