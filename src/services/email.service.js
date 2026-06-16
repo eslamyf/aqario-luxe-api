@@ -1,13 +1,19 @@
 const nodemailer = require('nodemailer');
 const logger = require('../utils/logger');
 
+const port = Number(process.env.EMAIL_PORT) || 587;
+const secure = port === 465 || process.env.EMAIL_SECURE === 'true';
+
 const transporter = nodemailer.createTransport({
   host:   process.env.EMAIL_HOST,
-  port:   Number(process.env.EMAIL_PORT) || 587,
-  secure: false,
+  port:   port,
+  secure: secure,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false // Prevents failure due to self-signed/proxy certificate chain verification on cloud hosts
   },
   connectionTimeout: 10000, // 10 seconds timeout to connect
   socketTimeout: 10000,     // 10 seconds timeout for socket inactivity
