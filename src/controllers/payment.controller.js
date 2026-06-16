@@ -826,17 +826,11 @@ exports.adminUpdatePayout = async (req, res, next) => {
       throw new Error('Payout request is already resolved');
     }
 
-    if (status === 'approved') {
-      // Fetch owner balance inside the session
-      const owner = await User.findById(payout.ownerId).session(session);
-      if (!owner || owner.balance_USD < payout.amount) {
-        throw new Error('Owner has insufficient balance to complete this payout');
-      }
-
-      // Decrement the balance and wallet
+    if (status === 'rejected') {
+      // Refund the balance and wallet to the user upon rejection
       await User.findByIdAndUpdate(
         payout.ownerId,
-        { $inc: { balance_USD: -payout.amount, wallet: -payout.amount } },
+        { $inc: { balance_USD: payout.amount, wallet: payout.amount } },
         { session }
       );
     }
@@ -846,7 +840,7 @@ exports.adminUpdatePayout = async (req, res, next) => {
 
     if (session) await session.commitTransaction();
 
-    logger.info(`[Payout Admin] Payout request ${payout._id} for ${payout.amount} EGP was ${status.toUpperCase()} by admin ${req.user._id}`);
+    logger.info(`[Payout Admin] Payout request ${payout._id} for ${payout.amount} ${payout.currency || 'USD'} was ${status.toUpperCase()} by admin ${req.user._id}`);
 
     res.status(200).json({
       status: 'success',

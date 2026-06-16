@@ -57,15 +57,10 @@ exports.register = asyncHandler(async (req, res) => {
   // Save the user (creates or updates)
   await user.save();
 
-  try {
-    await sendVerificationEmail(user.email, otp);
-    logger.info(`[Email] OTP sent to ${user.email}`);
-  } catch (emailError) {
+  // Fire-and-forget: Send verification email asynchronously in the background so that SMTP server latency doesn't block signup
+  sendVerificationEmail(user.email, otp).catch((emailError) => {
     logger.error(`[Email] Failed to send OTP to ${user.email}: ${emailError.message}`);
-    // CRUCIAL ROLLBACK: Delete the dangling unverified record immediately
-    await User.findByIdAndDelete(user._id);
-    return res.status(500).json({ status: 'error', message: 'Email service failure. Registration rolled back. Please try again.' });
-  }
+  });
 
   user.password = undefined;
   res.status(201).json({
@@ -154,7 +149,7 @@ exports.resendOTP = asyncHandler(async (req, res) => {
   const otp = user.createOTP();
   await user.save({ validateBeforeSave: false });
 
-  await sendVerificationEmail(user.email, otp).catch(e =>
+  sendVerificationEmail(user.email, otp).catch(e =>
     logger.warn(`[ResendOTP] Email send failed: ${e.message}`)
   );
 
