@@ -122,18 +122,25 @@ const server = http.createServer(app);
 const io = initSocket(server);
 
 // ── CORS FIRST — Before all other middleware ──────────────────
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, Postman, server-to-server)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: Origin '${origin}' not in ALLOWED_ORIGINS`));
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false); // Deny CORS cleanly without throwing a 500 error
+    }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'Idempotency-Key'],
   exposedHeaders: ['X-Request-Id'],
-}));
+  optionsSuccessStatus: 200 // Response status for preflight OPTIONS requests
+};
+
+app.use(cors(corsOptions));
+app.options(/(.*)/, cors(corsOptions)); // Handle preflight OPTIONS requests explicitly for all routes using RegExp for Express v5 compatibility
+
 
 // ── Middlewares ────────────────────────────────────────────
 // Lazy database and services connection middleware for Serverless compatibility

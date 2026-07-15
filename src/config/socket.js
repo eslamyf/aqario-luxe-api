@@ -12,6 +12,7 @@ module.exports = (httpServer) => {
       origin:  process.env.CLIENT_URL || '*',
       methods: ['GET', 'POST'],
     },
+    transports: ['polling', 'websocket'], // Allow HTTP polling fallback in serverless
     pingTimeout:  60000,
     pingInterval: 25000,
   });
