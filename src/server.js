@@ -333,4 +333,7 @@ if (process.env.NODE_ENV !== 'test' && !isVercel) {
   });
 }
 
-module.exports = { app, io, startServer };
+module.exports = app;
+module.exports.app = app;
+module.exports.io = io;
+module.exports.startServer = startServer;
