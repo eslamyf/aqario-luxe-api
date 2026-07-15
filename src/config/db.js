@@ -21,13 +21,18 @@ mongoose.connection.on('error', (err) => {
   logger.error(`MongoDB connection event error: ${err.message}`);
 });
 
+let cachedDb = null;
+
 const connectDB = async () => {
+  if (cachedDb && mongoose.connection.readyState === 1) {
+    return cachedDb;
+  }
   try {
     const conn = await mongoose.connect(process.env.MONGO_URI, {
       // MongoDB Atlas recommended options
       serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of hanging on IP whitelist rejection
       socketTimeoutMS: 45000,
-      maxPoolSize: 10,
+      maxPoolSize: 5, // Reduced maxPoolSize for better serverless scale-out compatibility
     });
     logger.info(` MongoDB Atlas Connected: ${conn.connection.host}`);
   } catch (err) {

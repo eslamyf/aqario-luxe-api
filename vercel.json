@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "src/server.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/jobs/booking-completion",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/v1/jobs/kyc-cleanup",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/v1/jobs/payment-expiry",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/v1/jobs/saved-search",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/v1/jobs/subscription-expiry",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/v1/jobs/subscription-reset",
+      "schedule": "5 0 1 * *"
+    }
+  ]
+}

@@ -82,6 +82,7 @@ const auctionRoutes = require('./routes/auction.routes');
 const bidRoutes = require('./routes/bid.routes');
 const agentRoutes = require('./routes/agent.routes');
 const chatRoutes = require('./routes/chat.routes');
+const jobsRoutes = require('./routes/jobs.routes');
 const CLIENT_URL = process.env.CLIENT_URL;
 
 if (!CLIENT_URL) {
@@ -135,6 +136,29 @@ app.use(cors({
 }));
 
 // ── Middlewares ────────────────────────────────────────────
+// Lazy database and services connection middleware for Serverless compatibility
+let servicesConnected = false;
+const connectServices = async () => {
+  if (!servicesConnected) {
+    await connectDB();
+    await connectRedis();
+    servicesConnected = true;
+  }
+};
+
+app.use(async (req, res, next) => {
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+  try {
+    await connectServices();
+    next();
+  } catch (err) {
+    logger.error('Failed to connect to services on demand:', err.message);
+    next(err);
+  }
+});
+
 app.use(requestLogger);
 app.use(compression());
 app.use(helmet({
@@ -213,6 +237,7 @@ app.use(`${API}/auctions`, auctionRoutes);
 app.use(`${API}/bids`, bidRoutes);
 app.use(`${API}/agents`, agentRoutes);
 app.use(`${API}/chats`, chatRoutes);
+app.use(`${API}/jobs`, jobsRoutes);
 
 // Root
 app.get('/', (req, res) => res.json({
@@ -252,16 +277,21 @@ const PORT = process.env.PORT || 3000;
 const startServer = async () => {
   await connectDB();
   await connectRedis();
+  servicesConnected = true;
   server.listen(PORT, () => {
     logger.info(` Server running on port ${PORT}`);
     logger.info(` API: http://localhost:${PORT}${API}`);
     logger.info(` Docs: http://localhost:${PORT}/api/docs`);
     logger.info(`  Health: http://localhost:${PORT}/api/health`);
-    initSavedSearchJob(io);
-    initBookingJob(io);
-    initPaymentExpiryJob();
-    initSubscriptionExpiryJob();
-    initKycCleanupJob();
+    
+    // In-memory crons are disabled on Vercel to avoid multiple running instances
+    if (!process.env.VERCEL) {
+      initSavedSearchJob(io);
+      initBookingJob(io);
+      initPaymentExpiryJob();
+      initSubscriptionExpiryJob();
+      initKycCleanupJob();
+    }
 
     // Programmatically initialize localtunnel in development
     if (process.env.NODE_ENV === 'development') {
@@ -285,7 +315,10 @@ const startServer = async () => {
     }
   });
 };
-if (process.env.NODE_ENV !== 'test') {
+
+const isVercel = process.env.VERCEL === '1';
+
+if (process.env.NODE_ENV !== 'test' && !isVercel) {
   startServer().catch((err) => {
     logger.error('Startup failed:', err.message);
     logger.error(err.stack);
