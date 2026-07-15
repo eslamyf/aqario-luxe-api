@@ -148,8 +148,24 @@ module.exports = (httpServer) => {
   return _io;
 };
 
+const createDummyIO = () => {
+  const dummy = {
+    to: () => dummy,
+    emit: () => dummy,
+    in: () => dummy,
+    join: () => dummy,
+    leave: () => dummy,
+    on: () => dummy,
+    use: () => dummy,
+  };
+  return dummy;
+};
+
 module.exports.getIO = () => {
-  if (!_io) throw new Error('Socket.IO has not been initialized');
+  if (!_io) {
+    logger.warn('[Socket] getIO() called but Socket.IO is not initialized. Returning dummy fallback object.');
+    return createDummyIO();
+  }
   return _io;
 };
 
