@@ -216,8 +216,14 @@ app.use(cookieParser());
 // Attach io to requests
 app.use((req, _res, next) => { req.io = io; next(); });
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// Static files with 1-year aggressive browser caching for instant asset loading
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
+  maxAge: '1y',
+  etag: true,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+}));
 
 // Swagger docs
 if (process.env.NODE_ENV !== 'production') setupSwagger(app);
