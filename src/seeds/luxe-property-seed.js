@@ -2,7 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 const mongoose = require('mongoose');
 const Property = require('../models/property.model');
-const User     = require('../models/user.model');
+const User = require('../models/user.model');
 
 const SEED_OWNER_EMAIL = 'owner@aqario-luxe.com';
 

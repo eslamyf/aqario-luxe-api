@@ -143,12 +143,12 @@ const seedData = async () => {
     console.log('⭐ Generating reviews...');
     const reviewDocs = [];
     const reviewTrack = new Set();
-    
+
     for (let i = 0; i < 300; i++) {
       const prop = random(approvedProperties);
       const buyer = random(buyers);
       const trackKey = `${prop._id}-${buyer._id}`;
-      
+
       if (!reviewTrack.has(trackKey)) {
         reviewDocs.push({
           userId: buyer._id,
@@ -170,7 +170,7 @@ const seedData = async () => {
       const action = random(actions);
       let targetType = 'Property';
       let targetId = random(createdProperties)._id;
-      
+
       if (action.includes('USER') || action.includes('KYC') || action.includes('ROLE')) {
         targetType = 'User';
         targetId = random(createdUsers)._id;
@@ -195,7 +195,7 @@ const seedData = async () => {
     console.log(`- Payments: ${paymentDocs.length}`);
     console.log(`- Reviews: ${reviewDocs.length}`);
     console.log(`- Audit Logs: 300`);
-    
+
     process.exit(0);
   } catch (err) {
     console.error('❌ Error seeding data:', err);
