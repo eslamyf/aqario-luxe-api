@@ -11,10 +11,23 @@ class APIFeatures {
     const excluded = ['page', 'sort', 'limit', 'fields', 'search', 'cursor'];
     excluded.forEach((el) => delete queryObj[el]);
 
+    // Preserve pre-formatted Mongoose operators ($or, $and) that contain RegExp or Objects
+    const preserveOr = queryObj.$or;
+    delete queryObj.$or;
+    const preserveAnd = queryObj.$and;
+    delete queryObj.$and;
+
     let queryStr = JSON.stringify(queryObj);
     queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (m) => `$${m}`);
 
     this.filterQuery = JSON.parse(queryStr);
+    if (preserveOr) {
+      this.filterQuery.$or = preserveOr;
+    }
+    if (preserveAnd) {
+      this.filterQuery.$and = preserveAnd;
+    }
+
     this.query = this.query.find(this.filterQuery);
     return this;
   }
@@ -97,7 +110,7 @@ class APIFeatures {
     if (Array.isArray(queryLimit)) queryLimit = queryLimit[0];
 
     const page  = Math.max(1, parseInt(queryPage, 10) || 1);
-    const limit = Math.max(1, Math.min(100, parseInt(queryLimit, 10) || 10));
+    const limit = Math.max(1, Math.min(1000, parseInt(queryLimit, 10) || 10));
     const skip  = (page - 1) * limit;
     
     // We still apply limit. We can skip if cursor is not provided.

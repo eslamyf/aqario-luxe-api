@@ -29,20 +29,24 @@ exports.advancedSearch = asyncHandler(async (req, res) => {
   if (type)        filter.type        = type;
   if (listingType) filter.listingType = listingType;
   if (city) {
+    const escapedCity = String(city).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const cityRegex = new RegExp(escapedCity, 'i');
     if (!filter.$and) filter.$and = [];
     filter.$and.push({
       $or: [
-        { 'location.city.en': city },
-        { 'location.city.ar': city }
+        { 'location.city.en': cityRegex },
+        { 'location.city.ar': cityRegex }
       ]
     });
   }
   if (district) {
+    const escapedDistrict = String(district).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const districtRegex = new RegExp(escapedDistrict, 'i');
     if (!filter.$and) filter.$and = [];
     filter.$and.push({
       $or: [
-        { 'location.district.en': district },
-        { 'location.district.ar': district }
+        { 'location.district.en': districtRegex },
+        { 'location.district.ar': districtRegex }
       ]
     });
   }
