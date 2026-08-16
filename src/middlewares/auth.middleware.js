@@ -71,3 +71,25 @@ exports.restrictTo = (...roles) => {
     next();
   };
 };
+
+exports.optionalAuth = async (req, res, next) => {
+  try {
+    let token;
+    if (req.headers.authorization?.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.query.token) {
+      token = req.query.token;
+    }
+
+    if (token) {
+      const decoded = verifyAccessToken(token);
+      const user = await User.findById(decoded.id);
+      if (user && user.isActive && !user.isBanned) {
+        req.user = user;
+      }
+    }
+  } catch (err) {
+    // Ignore error for optional auth
+  }
+  next();
+};

@@ -17,6 +17,54 @@ const { getPaginationParams } = require('../../utils/paginate');
 //  ADMIN DASHBOARD
 // ══════════════════════════════════════════════════════
 
+// @route GET /api/v1/dashboard/admin/requests
+exports.adminPropertyRequests = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 15;
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    $or: [
+      { type: 'property_submission' },
+      { 'details.contactName': { $exists: true, $ne: null } },
+      { 'details.propertyType': { $exists: true, $ne: null } }
+    ]
+  };
+
+  if (req.query.status && req.query.status !== 'all') {
+    filter.status = req.query.status;
+  }
+
+  if (req.query.search) {
+    const searchRegex = new RegExp(req.query.search, 'i');
+    filter.$and = [
+      {
+        $or: [
+          { 'details.contactName': searchRegex },
+          { 'details.contactPhone': searchRegex },
+          { 'details.city': searchRegex },
+          { content: searchRegex }
+        ]
+      }
+    ];
+  }
+
+  const total = await Inquiry.countDocuments(filter);
+  const requests = await Inquiry.find(filter)
+    .populate('sender', 'name email photo phone')
+    .sort('-createdAt')
+    .skip(skip)
+    .limit(limit);
+
+  res.status(200).json({
+    status: 'success',
+    total,
+    page,
+    pages: Math.ceil(total / limit) || 1,
+    data: { requests }
+  });
+});
+
 // @route GET /api/v1/dashboard/admin/stats
 exports.adminStats = asyncHandler(async (req, res) => {
   const [

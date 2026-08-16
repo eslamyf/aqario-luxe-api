@@ -1,11 +1,9 @@
 const express = require('express');
 const router  = express.Router();
 const inquiryController = require('../controllers/inquiry/inquiry.controller');
-const { protect }       = require('../middlewares/auth.middleware');
+const { protect, optionalAuth, restrictTo } = require('../middlewares/auth.middleware');
 const validate          = require('../middlewares/validation.middleware');
 const { sendInquirySchema } = require('../validators/inquiry.validators');
-
-router.use(protect);
 
 /**
  * @swagger
@@ -47,7 +45,12 @@ router.use(protect);
  *                         createdAt:   { type: string, format: date-time }
  *       401: { $ref: '#/components/responses/401' }
  */
-router.post('/', validate(sendInquirySchema), inquiryController.sendInquiry);
+router.post('/', optionalAuth, validate(sendInquirySchema), inquiryController.sendInquiry);
+
+router.use(protect);
+
+router.get('/admin/requests', restrictTo('admin'), inquiryController.getPropertyRequests);
+router.patch('/:id/status', restrictTo('admin'), inquiryController.updateRequestStatus);
 
 /**
  * @swagger

@@ -1,38 +1,67 @@
+const logger   = require('../../utils/logger');
 const Inquiry  = require('../../models/inquiry.model');
 const Property = require('../../models/property.model');
 const Chat     = require('../../models/chat.model');
 const Message  = require('../../models/message.model');
 const { createNotification } = require('../../utils/notificationHelper');
+const { sendPropertySubmissionNotificationEmail } = require('../../services/email.service');
 
 exports.sendInquiry = async (req, res, next) => {
   try {
-    const { propertyId, message } = req.body;
+    const { propertyId, message, title, propertyType, listingType, city, contactName, contactPhone, notes } = req.body;
 
-    const property = await Property.findById(propertyId);
-    if (!property) return res.status(404).json({ status: 'fail', message: req.t('PROPERTY.NOT_FOUND') });
-    if (property.owner.toString() === req.user._id.toString()) {
-      return res.status(400).json({ status: 'fail', message: req.t('INQUIRY.OWN_PROPERTY') });
+    let property = null;
+    let receiverId = null;
+
+    if (propertyId) {
+      property = await Property.findById(propertyId);
+      if (!property) return res.status(404).json({ status: 'fail', message: req.t('PROPERTY.NOT_FOUND') });
+      if (req.user && property.owner.toString() === req.user._id.toString()) {
+        return res.status(400).json({ status: 'fail', message: req.t('INQUIRY.OWN_PROPERTY') });
+      }
+      receiverId = property.owner;
     }
 
+    const isPropertySubmission = !!(propertyType || listingType || city || contactName || contactPhone);
+    const contentText =
+      message ||
+      notes ||
+      title ||
+      `طلب إدراج عقار (${propertyType || ''} - ${listingType || ''}) في ${city || ''} - الاسم: ${contactName || ''} - الهاتف: ${contactPhone || ''}`;
+
+    const submissionDetails = {
+      contactName: contactName || req.user?.name || 'عميل',
+      contactPhone: contactPhone || req.user?.phone || 'غير متوفر',
+      propertyType: propertyType || 'شقة',
+      listingType: listingType || 'بيع',
+      city: city || 'قنا الجديدة',
+      notes: notes || message || '',
+      submittedAt: new Date(),
+    };
+
     const inquiry = await Inquiry.create({
-      sender:   req.user._id,
-      receiver: property.owner,
-      property: propertyId,
-      content:  message,
+      sender:   req.user ? req.user._id : null,
+      receiver: receiverId,
+      property: propertyId || null,
+      content:  contentText,
+      type:     isPropertySubmission ? 'property_submission' : 'inquiry',
+      status:   'pending',
+      details:  submissionDetails,
     });
 
-    await inquiry.populate([
-      { path: 'sender',   select: 'name email photo' },
-      { path: 'property', select: 'title price location' },
-    ]);
+    // ── Email Notification to Admin (Non-blocking) ──────────────────────────
+    sendPropertySubmissionNotificationEmail(submissionDetails).catch((err) => {
+      logger.error(`[InquiryController] Failed to send admin email notification: ${err?.message || err}`);
+    });
 
-    // Notify property owner
-    await createNotification(req.io, property.owner, {
-      type:    'inquiry',
-      title:   req.t('NOTIFICATION.NEW_INQUIRY'),
-      message: req.t('NOTIFICATION.NEW_INQUIRY_MSG', { name: req.user.name, property: property.title }),
-      link:    `/inquiries/${inquiry._id}`,
-    }).catch(() => {});
+    if (receiverId && property) {
+      await createNotification(req.io, receiverId, {
+        type:    'inquiry',
+        title:   req.t('NOTIFICATION.NEW_INQUIRY'),
+        message: req.t('NOTIFICATION.NEW_INQUIRY_MSG', { name: req.user?.name || contactName || 'عميل', property: property.title }),
+        link:    `/inquiries/${inquiry._id}`,
+      }).catch(() => {});
+    }
 
     res.status(201).json({ status: 'success', message: req.t('INQUIRY.SENT'), data: { inquiry } });
   } catch (err) {
@@ -164,7 +193,11 @@ exports.deleteInquiry = async (req, res, next) => {
   try {
     const inquiry = await Inquiry.findById(req.params.id);
     if (!inquiry) return res.status(404).json({ status: 'fail', message: req.t('INQUIRY.NOT_FOUND') });
-    if (inquiry.sender.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    
+    const isSender = inquiry.sender && req.user && inquiry.sender.toString() === req.user._id.toString();
+    const isAdmin = req.user && req.user.role === 'admin';
+
+    if (!isSender && !isAdmin) {
       return res.status(403).json({ status: 'fail', message: req.t('COMMON.NOT_AUTHORIZED') });
     }
     await inquiry.deleteOne();
@@ -181,6 +214,81 @@ exports.getOwnerInquiries = async (req, res, next) => {
       .populate('property', 'title price location images')
       .sort('-createdAt');
     res.status(200).json({ status: 'success', results: inquiries.length, data: { inquiries } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── Admin: Property Requests Management ─────────────────────────────────────
+exports.getPropertyRequests = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 15;
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      $or: [
+        { type: 'property_submission' },
+        { 'details.contactName': { $exists: true, $ne: null } },
+        { 'details.propertyType': { $exists: true, $ne: null } }
+      ]
+    };
+
+    if (req.query.status && req.query.status !== 'all') {
+      filter.status = req.query.status;
+    }
+
+    if (req.query.search) {
+      const searchRegex = new RegExp(req.query.search, 'i');
+      filter.$and = [
+        {
+          $or: [
+            { 'details.contactName': searchRegex },
+            { 'details.contactPhone': searchRegex },
+            { 'details.city': searchRegex },
+            { content: searchRegex }
+          ]
+        }
+      ];
+    }
+
+    const total = await Inquiry.countDocuments(filter);
+    const requests = await Inquiry.find(filter)
+      .populate('sender', 'name email photo phone')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit);
+
+    res.status(200).json({
+      status: 'success',
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      data: { requests }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.updateRequestStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ status: 'fail', message: 'Invalid status value' });
+    }
+
+    const request = await Inquiry.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    );
+
+    if (!request) {
+      return res.status(404).json({ status: 'fail', message: 'Property request not found' });
+    }
+
+    res.status(200).json({ status: 'success', data: { request } });
   } catch (err) {
     next(err);
   }

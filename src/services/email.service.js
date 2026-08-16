@@ -153,4 +153,72 @@ exports.sendViewingResponseEmail = async (email, { status, propertyTitle, prefer
   });
 };
 
+// ─── Property Submission Email Notification ────────
+exports.sendPropertySubmissionNotificationEmail = async (details = {}) => {
+  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || 'eslam9076460@gmail.com';
+  const { contactName, contactPhone, propertyType, listingType, city, notes, submittedAt } = details;
+
+  try {
+    logger.info(`[EmailService] Sending new property request notification email to: ${adminEmail}`);
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #c5a059; border-radius: 12px; background-color: #141418; color: #ffffff; direction: rtl; text-align: right;">
+        <h2 style="color: #c5a059; border-bottom: 1px solid rgba(197, 160, 89, 0.3); padding-bottom: 12px; margin-top: 0;">
+          طلب جديد لإضافة عقار - AQARIO
+        </h2>
+        <p style="font-size: 15px; color: #d1d5db;">طلب جديد وصل من موقع AQARIO:</p>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #9ca3af; font-weight: bold; width: 35%;">اسم صاحب الطلب:</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffffff;">${contactName || 'عميل غير مسجل'}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #9ca3af; font-weight: bold;">رقم الهاتف:</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #60a5fa; direction: ltr; text-align: right;">${contactPhone || 'غير متوفر'}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #9ca3af; font-weight: bold;">نوع العقار:</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffffff;">${propertyType || 'عقار'}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #9ca3af; font-weight: bold;">نوع العرض:</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffffff;">${listingType || 'بيع'}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #9ca3af; font-weight: bold;">المدينة / المنطقة:</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffffff;">${city || 'قنا الجديدة'}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #9ca3af; font-weight: bold;">تاريخ الطلب:</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffffff;">${new Date(submittedAt || Date.now()).toLocaleString('ar-EG')}</td>
+          </tr>
+        </table>
+        ${notes ? `
+        <div style="margin-top: 20px; background-color: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <strong style="color: #c5a059; display: block; margin-bottom: 6px;">الملاحظات:</strong>
+          <p style="margin: 0; color: #e5e7eb; font-size: 14px; line-height: 1.6;">${notes}</p>
+        </div>` : ''}
+        <div style="margin-top: 24px; text-align: center;">
+          <a href="${process.env.CLIENT_URL || 'http://localhost:4200'}/admin/requests" style="display: inline-block; padding: 12px 24px; background-color: #c5a059; color: #000000; font-weight: bold; text-decoration: none; border-radius: 8px;">
+            الانتقال إلى طلبات العقارات في لوحة التحكم
+          </a>
+        </div>
+      </div>
+    `;
+
+    const result = await sendEmail({
+      to: adminEmail,
+      subject: `طلب جديد لإضافة عقار - AQARIO (${contactName || 'عميل'} - ${propertyType || 'عقار'})`,
+      html: htmlContent
+    });
+
+    logger.info(`[EmailService] ✅ Property request email sent successfully to ${adminEmail}. Message ID: ${result?.messageId}`);
+    return result;
+  } catch (err) {
+    logger.error(`[EmailService] ❌ Failed to send property request email to ${adminEmail}: ${err.message}`);
+    // Non-blocking: do not throw to caller
+    return null;
+  }
+};
+
 

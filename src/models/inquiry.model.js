@@ -5,19 +5,19 @@ const inquirySchema = new mongoose.Schema(
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Sender is required'],
+      required: false,
       alias: 'senderId',
     },
     receiver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Receiver is required'],
+      required: false,
       alias: 'ownerId',
     },
     property: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Property',
-      required: [true, 'Property is required'],
+      required: false,
       alias: 'propertyId',
     },
     content: {
@@ -26,6 +26,25 @@ const inquirySchema = new mongoose.Schema(
       trim: true,
       maxlength: [1000, 'Message cannot exceed 1000 characters'],
       alias: 'message',
+    },
+    type: {
+      type: String,
+      enum: ['general', 'property_submission', 'inquiry'],
+      default: 'general',
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    details: {
+      contactName:   { type: String, trim: true },
+      contactPhone:  { type: String, trim: true },
+      propertyType:  { type: String, trim: true },
+      listingType:   { type: String, trim: true },
+      city:          { type: String, trim: true },
+      notes:         { type: String, trim: true },
+      submittedAt:   { type: Date, default: Date.now },
     },
     isRead: { type: Boolean, default: false },
     // FIX — Add replies system for inquiry responses

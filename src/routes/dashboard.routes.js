@@ -26,6 +26,7 @@ router.use(protect);
  *       403: { $ref: '#/components/responses/403' }
  */
 router.get('/admin/stats', restrictTo('admin'), dashboardController.adminStats);
+router.get('/admin/requests', restrictTo('admin'), dashboardController.adminPropertyRequests);
 
 /**
  * @swagger
